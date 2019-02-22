@@ -1,13 +1,61 @@
 namespace ell_grpc;
 
+// Common structs
+
+struct DnetTime {
+    tsec:ulong;
+    tnsec:ulong;
+}
+
+table DnetRecordInfo {
+    path:string;
+
+    record_flags:ulong;
+    user_flags:ulong;
+
+    json_timestamp:DnetTime;
+    json_offset:ulong;
+    json_size:ulong;
+    json_capacity:ulong;
+    json_checksum:[ubyte];
+
+    data_timestamp:DnetTime;
+    data_offset:ulong;
+    data_size:ulong;
+    data_checksum:[ubyte];
+}
+
+// Rpcs
+
+table WriteRequestHeader {
+    key:string;
+
+    json_timestamp:DnetTime;
+    json_size:ulong;
+
+    data_timestamp:DnetTime;
+    data_size:ulong;
+}
+
+table WriteRequest {
+    header:WriteRequestHeader;
+    json:[ubyte];
+    data:[ubyte];
+}
+
+table WriteResponse {
+    record_info:DnetRecordInfo;
+}
+
 table LookupRequest {
     key:string;
 }
 
 table LookupResponse {
-    value:string;
+    record_info:DnetRecordInfo;
 }
 
 rpc_service Elliptics {
+    Write(WriteRequest):WriteResponse (streaming: "server");
     Lookup(LookupRequest):LookupResponse;
 }
