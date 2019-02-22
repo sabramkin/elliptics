@@ -25,16 +25,16 @@ struct service_provider_info {
 };
 
 
-class operation_processor {
+class request_manager_base {
 public:
-	operation_processor(service_provider_info *service_provider_info__)
+	request_manager_base(service_provider_info *service_provider_info__)
 		: service_provider_info_(service_provider_info__)
 		, process_request_(true)
 		, processing_started_(false)
 	{}
 
-	virtual void proceed(bool ok) = 0;
-	virtual ~operation_processor() = default;
+	virtual void process_completion(bool more) = 0;
+	virtual ~request_manager_base() = default;
 
 protected:
 	service_provider_info *service_provider_info_;
@@ -85,17 +85,17 @@ void time_point_to_dnet_time(const std::chrono::system_clock::time_point &time_p
 }
 
 
-class write_request_processor : public operation_processor {
+class write_request_manager : public async_action {
 public:
 	typedef ioremap::elliptics::dnet_write_request TRequest;
 	typedef ioremap::elliptics::dnet_write_response TResponse;
 
 public:
-	write_request_processor(
+	write_request_manager(
 		service_provider_info *service_provider_info_in,
 		std::function<void (std::shared_ptr<ioremap::elliptics::dnet_write_request>)> request_processor_in,
 		)
-		: operation_processor(service_provider_info_in)
+		: async_action(service_provider_info_in)
 		, request_(std::make_shared<TRequest>())
 		, json_offset_(0)
 		, data_offset_(0)
@@ -103,13 +103,13 @@ public:
 		service_->RequestWrite(ctx_.get(), &rpc_responder_, cq_, cq_, this);
 	}
 
-	virtual void proceed(bool ok) override {
+	virtual void process_completion(bool more) override {
 		if (!processing_started_) {
 			processing_started_ = true;
 			new write_request_processor(service_provider_info_);
 		}
 
-		if (!ok) {
+		if (!more) {
 			process_request_collected();
 			process_request_ = false;
 		}
@@ -122,7 +122,7 @@ public:
 	}
 
 	void send_response(const TResponse &response) {
-
+		responder_.Finish(serialize(response), Status::OK, this);
 	}
 
 private:
@@ -147,7 +147,7 @@ private:
 	}
 
 	void process_response() {
-
+		delete this;
 	}
 
 	void append_data(data_pointer &total_data, size_t &current_part_offset, fb::Vector<uint8_t> *current_part) {
