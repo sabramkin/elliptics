@@ -1,0 +1,6 @@
+[submodule "foreign/grpc"]
+	path = foreign/grpc
+	url = https://github.com/grpc/grpc.git
+[submodule "foreign/flatbuffers"]
+	path = foreign/flatbuffers
+	url = https://github.com/google/flatbuffers.git
