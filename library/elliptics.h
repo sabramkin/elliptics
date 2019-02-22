@@ -64,16 +64,8 @@ struct dnet_io_req {
 
 	struct dnet_net_state	*st;
 
-	void			*header;
-	size_t			hsize;
-
-	void			*data;
-	size_t			dsize;
-
-	int			on_exit;
-	int			fd;
-	off_t			local_offset;
-	size_t			fsize;
+	std::unique_ptr<ioremap::elliptics::common_request> request;
+	//int			on_exit; // TODO: what is it (used with fd)?
 
 	struct timespec		queue_start_ts;
 	uint64_t		queue_time;

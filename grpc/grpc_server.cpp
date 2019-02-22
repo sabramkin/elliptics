@@ -126,11 +126,11 @@ private:
 };
 
 void dnet_start_grpc_server(struct dnet_node *n) {
-	n->io->grpc = new dnet_grpc_server(n);
-	n->io->grpc->run();
+//	n->io->grpc = new dnet_grpc_server(n);
+//	n->io->grpc->run();
 }
 
 void dnet_stop_grpc_server(struct dnet_node *n) {
-	delete std::exchange(n->io->grpc, nullptr);
+//	delete std::exchange(n->io->grpc, nullptr);
 }
 

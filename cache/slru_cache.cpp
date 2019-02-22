@@ -79,8 +79,7 @@ slru_cache_t::~slru_cache_t() {
 }
 
 write_response_t slru_cache_t::write(dnet_net_state *st,
-                                     dnet_cmd *cmd,
-                                     const write_request &request,
+                                     ioremap::elliptics::dnet_write_request &request,
                                      dnet_access_context *context) {
 	TIMER_SCOPE("write");
 
@@ -114,8 +113,9 @@ write_response_t slru_cache_t::write(dnet_net_state *st,
 		const auto &callbacks = m_backend.callbacks();
 		int err = callbacks.command_handler(st,
 		                                    callbacks.command_private,
-		                                    cmd,
-		                                    request.request_data,
+		                                    //cmd,
+		                                    //request.request_data,
+		                                    &request,
 		                                    &stats,
 		                                    context);
 

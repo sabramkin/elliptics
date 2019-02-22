@@ -363,35 +363,6 @@ struct cache_stats {
 	}
 };
 
-struct write_request {
-	write_request(unsigned char *id, struct dnet_io_attr *io, ioremap::elliptics::data_pointer &data);
-	write_request(unsigned char *id,
-	              struct ioremap::elliptics::dnet_write_request &req,
-	              void *request_data,
-	              ioremap::elliptics::data_pointer &data,
-	              ioremap::elliptics::data_pointer &json);
-
-	unsigned char *id;
-
-	uint64_t ioflags;
-	uint64_t user_flags;
-	dnet_time timestamp;
-
-	uint64_t json_capacity;
-	dnet_time json_timestamp;
-
-	uint64_t data_offset;
-	uint64_t data_capacity;
-	uint64_t data_commit_size;
-
-	uint64_t cache_lifetime;
-
-	uint8_t (*data_checksum)[DNET_ID_SIZE];
-	void *request_data;
-	ioremap::elliptics::data_pointer data;
-	ioremap::elliptics::data_pointer json;
-};
-
 enum class write_status {
 	ERROR,
 	HANDLED_IN_BACKEND,
@@ -410,8 +381,7 @@ public:
 	~cache_manager();
 
 	write_response_t write(dnet_net_state *st,
-	                       dnet_cmd *cmd,
-	                       const write_request &request,
+	                       const dnet_write_request &request,
 	                       dnet_access_context *context);
 
 	read_response_t read(const unsigned char *id, uint64_t ioflags);

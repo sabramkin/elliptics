@@ -4,6 +4,8 @@
 #include <elliptics/packet.h>
 #include <elliptics/utils.hpp>
 
+#include "iserialized.hpp"
+
 namespace ioremap { namespace elliptics {
 
 #define DNET_READ_FLAGS_JSON (1<<0)
@@ -25,20 +27,19 @@ static inline const char *dnet_dump_read_flags(uint64_t flags)
 //
 
 struct dnet_id_native {
-	uint8_t id[DNET_ID_SIZE];
-	uint32_t group_id;
-	uint64_t reserved;
+	std::array<uint8_t, DNET_ID_SIZE>	id;
+	uint32_t				group_id;
 };
 
 struct dnet_cmd_native {
-	dnet_id_native id;
-	int status;
-	int cmd;
-	int backend_id;
-	uint64_t trace_id;
-	uint64_t flags;
-	uint64_t trans;
-	uint64_t size;
+	dnet_id_native	id;
+	int		status;
+	int		cmd;
+	int		backend_id;
+	uint64_t	trace_id;
+	uint64_t	flags;
+	uint64_t	trans;
+	uint64_t	size;
 };
 
 struct dnet_time_native {
@@ -47,30 +48,59 @@ struct dnet_time_native {
 };
 
 struct data_in_file {
-	int fd;
-	off_t local_offset;
-	size_t fsize;
+	int	fd;
+	off_t	local_offset;
+	size_t	fsize;
+	int 	on_exit;
+};
+
+enum class data_place_type {
+	NO_DATA		= 0,
+	IN_MEMORY	= 1,
+	IN_FILE		= 2,
 };
 
 struct data_place {
-	data_in_file in_file;
-	data_pointer in_memory;
+	data_in_file	in_file;
+	data_pointer	in_memory;
 
-	bool is_in_memory();
+	bool is_in_memory() const;
+
+	static data_place from_file(const data_in_file &in_file);
+	static data_place from_memory(const data_pointer &in_memory);
+};
+
+class iserializer;
+
+// All requests/responses must be inherited from common_request;
+// common_request is visible from dnet_io_req.
+struct common_request {
+	dnet_cmd_native			cmd;
+	std::unique_ptr<data_place>	data; // set if request/responses needs data
+
+	virtual ~common_request() = default;
+
+	// TODO: uncomment pure virtual
+	std::unique_ptr<iserialized> serialize(iserializer &) { return nullptr; }/* = 0;*/ // visitor
+	virtual void process() {}/* = 0;*/ // ask request to call its handler
 };
 
 //
 
-struct dnet_read_request {
+struct dnet_read_request : public common_request {
 	uint64_t ioflags;
 	uint64_t read_flags;
 	uint64_t data_offset;
 	uint64_t data_size;
 
 	dnet_time deadline;
+
+	//
+	virtual std::unique_ptr<iserialized> serialize(iserializer &) override;
+	virtual void process() override;
 };
 
-struct dnet_read_response {
+struct dnet_read_response : public common_request {
 	uint64_t record_flags;
 	uint64_t user_flags;
 
@@ -78,16 +108,20 @@ struct dnet_read_response {
 	uint64_t json_size;
 	uint64_t json_capacity;
 	uint64_t read_json_size;
-	data_place json;
+	data_pointer json;
 
 	dnet_time data_timestamp;
 	uint64_t data_size;
 	uint64_t read_data_offset;
 	uint64_t read_data_size;
 	data_place data;
+
+	//
+	virtual std::unique_ptr<iserialized> serialize(iserializer &) override;
+	virtual void process() override;
 };
 
-struct dnet_write_request {
+struct dnet_write_request : public common_request {
 	uint64_t ioflags;
 	uint64_t user_flags;
 	dnet_time timestamp;
@@ -95,6 +129,7 @@ struct dnet_write_request {
 	uint64_t json_size;
 	uint64_t json_capacity;
 	dnet_time json_timestamp;
+	data_pointer json;
 
 	uint64_t data_offset;
 	uint64_t data_size;
@@ -105,9 +140,13 @@ struct dnet_write_request {
 	uint64_t cache_lifetime;
 
 	dnet_time deadline;
+
+	//
+	virtual std::unique_ptr<iserialized> serialize(iserializer &) override;
+	virtual void process() override;
 };
 
-struct dnet_lookup_response {
+struct dnet_lookup_response : public common_request {
 	uint64_t record_flags;
 	uint64_t user_flags;
 	std::string path;
@@ -122,14 +161,18 @@ struct dnet_lookup_response {
 	uint64_t data_offset;
 	uint64_t data_size;
 	std::vector<unsigned char> data_checksum;
+
+	//
+	virtual std::unique_ptr<iserialized> serialize(iserializer &) override;
+	virtual void process() override;
 };
 
-struct dnet_remove_request {
+struct dnet_remove_request : public common_request {
 	uint64_t ioflags;
 	dnet_time timestamp;
 };
 
-struct dnet_bulk_read_request {
+struct dnet_bulk_read_request : public common_request {
 	std::vector<dnet_id> keys;
 	uint64_t ioflags;
 	uint64_t read_flags;
@@ -138,7 +181,7 @@ struct dnet_bulk_read_request {
 };
 
 
-struct dnet_bulk_remove_request {
+struct dnet_bulk_remove_request : public common_request {
 	dnet_bulk_remove_request();
 	explicit dnet_bulk_remove_request(const std::vector<dnet_id> &keys_in);
 
@@ -150,7 +193,7 @@ struct dnet_bulk_remove_request {
 	std::vector<dnet_time> timestamps;
 };
 
-struct dnet_iterator_request {
+struct dnet_iterator_request : public common_request {
 	dnet_iterator_request();
 	dnet_iterator_request(uint32_t type, uint64_t flags,
 	                      const std::vector<dnet_iterator_range> &key_range,
@@ -165,7 +208,7 @@ struct dnet_iterator_request {
 	std::vector<uint32_t> groups;
 };
 
-struct dnet_iterator_response {
+struct dnet_iterator_response : public common_request {
 	uint64_t iterator_id;
 	dnet_raw_id key;
 	int status;
@@ -188,7 +231,7 @@ struct dnet_iterator_response {
 	uint64_t blob_id;
 };
 
-struct dnet_server_send_request {
+struct dnet_server_send_request : public common_request {
 	std::vector<dnet_raw_id> keys;
 	std::vector<int> groups;
 	uint64_t flags;
@@ -197,18 +240,6 @@ struct dnet_server_send_request {
 	uint64_t chunk_commit_timeout;
 	uint8_t chunk_retry_count;
 };
-
-template<typename T>
-data_pointer serialize(const T &value);
-
-template<typename T>
-void deserialize(const data_pointer &data, T &value, size_t &offset);
-
-template<typename T>
-void deserialize(const data_pointer &data, T &value) {
-	size_t offset = 0;
-	deserialize(data, value, offset);
-}
 
 void validate_json(const std::string &json);
 

@@ -1,61 +1,91 @@
-namespace ell_grpc;
+namespace fb_grpc_dnet;
 
 // Common structs
 
-struct DnetTime {
-    tsec:ulong;
-    tnsec:ulong;
+table Id {
+    id:[uint8];
+    group_id:uint;
 }
 
-table DnetRecordInfo {
-    path:string;
-
-    record_flags:ulong;
-    user_flags:ulong;
-
-    json_timestamp:DnetTime;
-    json_offset:ulong;
-    json_size:ulong;
-    json_capacity:ulong;
-    json_checksum:[ubyte];
-
-    data_timestamp:DnetTime;
-    data_offset:ulong;
-    data_size:ulong;
-    data_checksum:[ubyte];
+table Cmd {
+    id:Id (required);
+    status:int32;
+    cmd:int32;
+    backend_id:int32;
+    trace_id:uint64;
+    flags:uint64;
+    trans:uint64;
+    size:uint64;
 }
 
-// Rpcs
+// Rpcs params
+
+// Write
 
 table WriteRequestHeader {
-    key:string;
+    cmd:Cmd (required);
 
-    json_timestamp:DnetTime;
-    json_size:ulong;
+    ioflags:uint64;
+    user_flags:uint64;
+    timestamp:uint64;
 
-    data_timestamp:DnetTime;
-    data_size:ulong;
+    json_size:uint64;
+    json_capacity:uint64;
+    json_timestamp:uint64;
+
+    data_offset:uint64;
+    data_size:uint64;
+    data_capacity:uint64;
+    data_commit_size:uint64;
+
+    cache_lifetime:uint64;
 }
 
 table WriteRequest {
     header:WriteRequestHeader;
-    json:[ubyte];
-    data:[ubyte];
-}
-
-table WriteResponse {
-    record_info:DnetRecordInfo;
-}
-
-table LookupRequest {
-    key:string;
+    json:[uint8];
+    data:[uint8];
 }
 
 table LookupResponse {
-    record_info:DnetRecordInfo;
+    cmd:Cmd (required);
+
+    record_flags:uint64;
+    user_flags:uint64;
+    path:string;
+
+    json_timestamp:uint64;
+    json_offset:uint64;
+    json_size:uint64;
+    json_capacity:uint64;
+    json_checksum:[uint8];
+
+    data_timestamp:uint64;
+    data_offset:uint64;
+    data_size:uint64;
+    data_checksum:[uint8];
 }
 
+// Read
+
+table ReadRequest {
+    cmd:Cmd (required);
+
+    ioflags:uint64;
+    read_flags:uint64;
+    data_offset:uint64;
+    data_size:uint64;
+}
+
+table ReadResponse {
+    info:LookupResponse;
+    json:[uint8];
+    data:[uint8];
+}
+
+// Rpc service
+
 rpc_service Elliptics {
-    Write(WriteRequest):WriteResponse (streaming: "server");
-    Lookup(LookupRequest):LookupResponse;
+    Write(WriteRequest):LookupResponse (streaming: "client");
+    Read(ReadRequest):ReadResponse (streaming: "server");
 }

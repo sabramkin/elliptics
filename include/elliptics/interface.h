@@ -261,8 +261,9 @@ struct dnet_backend_callbacks {
 	/* command handler processes DNET_CMD_* commands */
 	int			(* command_handler)(void *state,
 	                                            void *priv,
-	                                            struct dnet_cmd *cmd,
-	                                            void *data,
+	                                            //struct dnet_cmd *cmd,
+	                                            //void *data,
+	                                            void/*type: struct common_request*/ *cmd;
 	                                            void *cmd_stats,
 	                                            struct dnet_access_context *context);
 
