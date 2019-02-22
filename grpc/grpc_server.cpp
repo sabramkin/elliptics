@@ -17,7 +17,7 @@ namespace grpc {
 
 class CallData {
 public:
-	CallData(dnet_node *node, Elliptics::AsyncService *service, ServerCompletionQueue *cq)
+	CallData(dnet_node *node, ell_grpc::Elliptics::AsyncService *service, ServerCompletionQueue *cq)
 		: node_(node)
 		, service_(service)
 		, cq_(cq)
@@ -48,11 +48,11 @@ public:
 			DNET_LOG_INFO(node_, "GRPC: process rpc: {:p}, metadata:\n{}", (void*)this, ss.str());
 
 			auto msg_offset = mb_.CreateString("Data for " + request_.GetRoot()->key()->str());
-			auto lookup_offset = CreateLookupResponse(mb_, msg_offset);
+			auto lookup_offset = ell_grpc::CreateLookupResponse(mb_, msg_offset);
 			mb_.Finish(lookup_offset);
 
 			status_ = FINISH;
-			responder_.Finish(mb_.ReleaseMessage<LookupResponse>(), Status::OK, this);
+			responder_.Finish(mb_.ReleaseMessage<ell_grpc::LookupResponse>(), Status::OK, this);
 			break;
 		}
 		case FINISH: {
@@ -65,14 +65,14 @@ public:
 
 private:
 	dnet_node *node_;
-	Elliptics::AsyncService *service_;
+	ell_grpc::Elliptics::AsyncService *service_;
 	ServerCompletionQueue *cq_;
 	ServerContext ctx_;
 
-	flatbuffers::grpc::Message<LookupRequest> request_;
+	flatbuffers::grpc::Message<ell_grpc::LookupRequest> request_;
 	flatbuffers::grpc::MessageBuilder mb_;
 
-	ServerAsyncResponseWriter<flatbuffers::grpc::Message<LookupResponse>> responder_;
+	ServerAsyncResponseWriter<flatbuffers::grpc::Message<ell_grpc::LookupResponse>> responder_;
 
 	enum CallStatus { CREATE, PROCESS, FINISH };
 	CallStatus status_;
@@ -120,7 +120,7 @@ public:
 private:
 	dnet_node *node_;
 	std::unique_ptr<grpc::ServerCompletionQueue> cq_;
-	Elliptics::AsyncService service_;
+	ell_grpc::Elliptics::AsyncService service_;
 	std::unique_ptr<grpc::Server> server_;
 	std::unique_ptr<std::thread> thread_;
 };

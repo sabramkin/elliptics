@@ -1,3 +1,5 @@
+namespace ell_grpc;
+
 table LookupRequest {
     key:string;
 }
