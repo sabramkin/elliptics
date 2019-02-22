@@ -22,6 +22,45 @@ static inline const char *dnet_dump_read_flags(uint64_t flags)
 	return buffer;
 }
 
+//
+
+struct dnet_id_native {
+	uint8_t id[DNET_ID_SIZE];
+	uint32_t group_id;
+	uint64_t reserved;
+};
+
+struct dnet_cmd_native {
+	dnet_id_native id;
+	int status;
+	int cmd;
+	int backend_id;
+	uint64_t trace_id;
+	uint64_t flags;
+	uint64_t trans;
+	uint64_t size;
+};
+
+struct dnet_time_native {
+	uint64_t tsec;
+	uint64_t tnsec;
+};
+
+struct data_in_file {
+	int fd;
+	off_t local_offset;
+	size_t fsize;
+};
+
+struct data_place {
+	data_in_file in_file;
+	data_pointer in_memory;
+
+	bool is_in_memory();
+};
+
+//
+
 struct dnet_read_request {
 	uint64_t ioflags;
 	uint64_t read_flags;
@@ -39,11 +78,13 @@ struct dnet_read_response {
 	uint64_t json_size;
 	uint64_t json_capacity;
 	uint64_t read_json_size;
+	data_place json;
 
 	dnet_time data_timestamp;
 	uint64_t data_size;
 	uint64_t read_data_offset;
 	uint64_t read_data_size;
+	data_place data;
 };
 
 struct dnet_write_request {
@@ -59,6 +100,7 @@ struct dnet_write_request {
 	uint64_t data_size;
 	uint64_t data_capacity;
 	uint64_t data_commit_size;
+	data_pointer data;
 
 	uint64_t cache_lifetime;
 
