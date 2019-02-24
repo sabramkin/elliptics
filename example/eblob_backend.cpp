@@ -32,6 +32,7 @@
 #include "elliptics/newapi/session.hpp"
 
 #include "library/protocol.hpp"
+#include "library/msgpack_conv.hpp"
 #include "library/elliptics.h"
 #include "library/backend.h"
 #include "library/request_queue.h"

@@ -14,6 +14,7 @@
 #include "example/config.hpp"
 #include "library/access_context.h"
 #include "library/logger.hpp"
+#include "library/msgpack_conv.hpp"
 #include "library/protocol.hpp"
 #include "library/request_queue.h"
 #include "library/route.h"

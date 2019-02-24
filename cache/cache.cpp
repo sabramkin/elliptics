@@ -24,6 +24,7 @@
 #include "library/access_context.h"
 #include "library/backend.h"
 #include "library/protocol.hpp"
+#include "library/msgpack_conv.hpp"
 
 #include "monitor/measure_points.h"
 #include "rapidjson/document.h"

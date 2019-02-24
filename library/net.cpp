@@ -43,6 +43,7 @@
 #include "elliptics/interface.h"
 #include "common.hpp"
 #include "protocol.hpp"
+#include "msgpack_conv.hpp"
 #include "logger.hpp"
 
 

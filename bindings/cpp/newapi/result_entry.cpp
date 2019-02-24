@@ -1,5 +1,6 @@
 #include "elliptics/newapi/result_entry.hpp"
 #include "library/protocol.hpp"
+#include "library/msgpack_conv.hpp"
 #include "library/elliptics.h"
 
 #include <algorithm>

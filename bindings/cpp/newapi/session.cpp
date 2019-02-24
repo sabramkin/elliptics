@@ -15,6 +15,7 @@
 #include "library/common.hpp"
 #include "library/elliptics.h"
 #include "library/protocol.hpp"
+#include "library/msgpack_conv.hpp"
 
 #include "bindings/cpp/functional_p.h"
 
