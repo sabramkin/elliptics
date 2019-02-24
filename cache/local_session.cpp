@@ -82,11 +82,15 @@ int local_session::read(const dnet_id &id,
                         ioremap::elliptics::data_pointer *data,
                         dnet_time *data_ts) {
 	const uint64_t read_flags = (json ? DNET_READ_FLAGS_JSON : 0) | (data ? DNET_READ_FLAGS_DATA : 0);
-	auto packet = serialize(dnet_read_request{/*ioflags*/ m_ioflags,
-	                                          /*read_flags*/ read_flags,
-	                                          /*data_offset*/ 0,
-	                                          /*data_size*/ 0,
-	                                          /*deadline*/ dnet_time{0, 0}});
+
+	dnet_read_request request;
+	request.ioflags = m_ioflags;
+	request.read_flags = read_flags;
+	request.data_offset = 0;
+	request.data_size = 0;
+	request.deadline = dnet_time{0, 0};
+
+	auto packet = serialize(std::move(request));
 
 	dnet_cmd cmd;
 	memset(&cmd, 0, sizeof(cmd));
@@ -208,21 +212,21 @@ int local_session::write(const dnet_id &id,
                          const dnet_time &json_ts,
                          const std::string &data,
                          const dnet_time &data_ts) {
-	auto packet = serialize(dnet_write_request{
-		/*ioflags*/ m_ioflags | DNET_IO_FLAGS_PREPARE | DNET_IO_FLAGS_COMMIT | DNET_IO_FLAGS_PLAIN_WRITE,
-		/*user_flags*/ user_flags,
-		/*timestamp*/ data_ts,
-		/*json_size*/ json.size(),
-		/*json_capacity*/ json.capacity(),
-		/*json_timestamp*/ json_ts,
-		/*data_offset*/ 0,
-		/*data_size*/ data.size(),
-		/*data_capacity*/ data.size(),
-		/*data_commit_size*/ data.size(),
-		/*cache_lifetime*/ 0,
-		/*deadline*/ {0,0}
-	});
-
+	dnet_write_request request;
+	request.ioflags = m_ioflags | DNET_IO_FLAGS_PREPARE | DNET_IO_FLAGS_COMMIT | DNET_IO_FLAGS_PLAIN_WRITE;
+	request.user_flags = user_flags;
+	request.timestamp = data_ts;
+	request.json_size = json.size();
+	request.json_capacity = json.capacity();
+	request.json_timestamp = json_ts;
+	request.data_offset = 0;
+	request.data_size = data.size();
+	request.data_capacity = data.size();
+	request.data_commit_size = data.size();
+	request.cache_lifetime = 0;
+	request.deadline = {0, 0};
+		
+	auto packet = serialize(std::move(request));
 
 	data_buffer buffer(packet.size() + json.size() + data.size());
 	buffer.write(packet.data(), packet.size());

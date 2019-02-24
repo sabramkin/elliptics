@@ -297,28 +297,27 @@ static int dnet_cmd_cache_io_write_new(struct cache_manager *cache,
 	                                         context);
 
 	if (status == write_status::HANDLED_IN_CACHE) {
-		auto response = serialize(dnet_lookup_response{
-			0, // record_flags
-			it.user_flags, // user_flags
-			"", // path
+		dnet_lookup_response response;
+		response.record_flags = 0;
+		response.user_flags = it.user_flags;
+		response.path = "";
+		response.json_timestamp = it.json_timestamp;
+		response.json_offset = 0;
+		response.json_size = it.json->size();
+		response.json_capacity = it.json->size();
+		response.json_checksum = {};
+		response.data_timestamp = it.timestamp;
+		response.data_offset = 0;
+		response.data_size = it.data->size();
+		response.data_checksum = {};
 
-			it.json_timestamp, // json_timestamp
-			0, // json_offset
-			it.json->size(), // json_size
-			it.json->size(), // json_capacity
-			{}, // json_checksum
-
-			it.timestamp, // data_timestamp
-			0, // data_offset
-			it.data->size(), // data_size
-			{}, // data_checksum
-		});
+		auto response_packed = serialize(std::move(response));
 
 		cmd_stats->size = request.json_size + request.data_size;
 		cmd_stats->handled_in_cache = 1;
 
 		cmd->flags &= ~DNET_FLAGS_NEED_ACK;
-		err = dnet_send_reply(st, cmd, response.data(), response.size(), 0, context);
+		err = dnet_send_reply(st, cmd, response_packed.data(), response_packed.size(), 0, context);
 	} else if (status == write_status::HANDLED_IN_BACKEND) {
 		cmd_stats->size = request.json_size + request.data_size;
 		cmd_stats->handled_in_cache = 0;
@@ -430,37 +429,37 @@ static int dnet_cmd_cache_io_read_new(struct cache_manager *cache,
 		data_p = data_p.slice(request.data_offset, data_size);
 	}
 
-	auto header = serialize(dnet_read_response{
-		0, // record_flags
-		it.user_flags, // user_flags
+	dnet_read_response response;
+	response.record_flags = 0;
+	response.user_flags = it.user_flags;
+	response.json_timestamp = it.json_timestamp;
+	response.json_size = raw_json->size();
+	response.json_capacity = raw_json->size();
+	response.read_json_size = json.size();
+	response.data_timestamp = it.timestamp;
+	response.data_size = raw_data->size();
+	response.read_data_offset = request.data_offset;
+	response.read_data_size = data_p.size();
 
-		it.json_timestamp, // json_timestamp
-		raw_json->size(), // json_size
-		raw_json->size(), // json_capacity
-		json.size(), // read_json_size
-
-		it.timestamp, // data_timestamp
-		raw_data->size(), // data_size
-		request.data_offset, // read_data_offset
-		data_p.size(), // read_data_size
-	});
+	auto header = serialize(std::move(response));
 
 	// NB! Following code is a copy-paste from blob_read_new()
-	auto response = data_pointer::allocate(sizeof(*cmd) + header.size() + json.size());
-	memcpy(response.data(), cmd, sizeof(*cmd));
-	memcpy(response.skip(sizeof(*cmd)).data(), header.data(), header.size());
+	auto response_packed = data_pointer::allocate(sizeof(*cmd) + header.size() + json.size());
+	memcpy(response_packed.data(), cmd, sizeof(*cmd));
+	memcpy(response_packed.skip(sizeof(*cmd)).data(), header.data(), header.size());
 	if (!json.empty())
-		memcpy(response.skip(sizeof(*cmd) + header.size()).data(), json.data(), json.size());
+		memcpy(response_packed.skip(sizeof(*cmd) + header.size()).data(), json.data(), json.size());
 
-	response.data<dnet_cmd>()->size = header.size() + json.size() + data_p.size();
-	response.data<dnet_cmd>()->flags |= DNET_FLAGS_REPLY;
-	response.data<dnet_cmd>()->flags &= ~DNET_FLAGS_NEED_ACK;
+	response_packed.data<dnet_cmd>()->size = header.size() + json.size() + data_p.size();
+	response_packed.data<dnet_cmd>()->flags |= DNET_FLAGS_REPLY;
+	response_packed.data<dnet_cmd>()->flags &= ~DNET_FLAGS_NEED_ACK;
 
 	cmd_stats->size = json.size() + data_p.size();
 	cmd_stats->handled_in_cache = 1;
 
 	cmd->flags &= ~DNET_FLAGS_NEED_ACK;
-	return dnet_send_data(st, response.data(), response.size(), data_p.data(), data_p.size(), context);
+	return dnet_send_data(st, response_packed.data(), response_packed.size(),
+		              data_p.data(), data_p.size(), context);
 }
 
 static int dnet_cmd_cache_io_lookup(struct dnet_backend *backend,
@@ -556,25 +555,24 @@ static int dnet_cmd_cache_io_lookup_new(struct cache_manager *cache,
 		}
 	}
 
-	auto response = serialize(dnet_lookup_response{
-		0, // record_flags
-		it.user_flags, // user_flags
-		"", // path
+	dnet_lookup_response response;
+	response.record_flags = 0;
+	response.user_flags = it.user_flags;
+	response.path = "";
+	response.json_timestamp = it.json_timestamp;
+	response.json_offset = 0;
+	response.json_size = it.json->size();
+	response.json_capacity = it.json->size();
+	response.json_checksum = std::move(json_checksum);
+	response.data_timestamp = it.timestamp;
+	response.data_offset = 0;
+	response.data_size = it.data->size();
+	response.data_checksum = std::move(data_checksum);
 
-		it.json_timestamp, // json_timestamp
-		0, // json_offset
-		it.json->size(), // json_size
-		it.json->size(), // json_capacity
-		std::move(json_checksum), // json_checksum
-
-		it.timestamp, // data_timestamp
-		0, // data_offset
-		it.data->size(), // data_size
-		std::move(data_checksum), // data_checksum
-	});
+	auto response_packed = serialize(std::move(response));
 
 	cmd->flags &= ~DNET_FLAGS_NEED_ACK;
-	return dnet_send_reply(st, cmd, response.data(), response.size(), 0, context);
+	return dnet_send_reply(st, cmd, response_packed.data(), response_packed.size(), 0, context);
 }
 
 static int dnet_cmd_cache_io_remove(struct cache_manager *cache,
@@ -582,7 +580,10 @@ static int dnet_cmd_cache_io_remove(struct cache_manager *cache,
 				    struct dnet_io_attr *io,
 				    struct dnet_cmd_stats *cmd_stats,
 				    dnet_access_context *context) {
-	ioremap::elliptics::dnet_remove_request request{io->flags, {0, 0}};
+	ioremap::elliptics::dnet_remove_request request;
+	request.ioflags = io->flags;
+	request.timestamp = {0, 0};
+
 	const int err = cache->remove(cmd, request, context);
 	if (!err) {
 		cmd_stats->handled_in_cache = 1;

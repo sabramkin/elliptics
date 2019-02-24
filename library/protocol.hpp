@@ -22,7 +22,69 @@ static inline const char *dnet_dump_read_flags(uint64_t flags)
 	return buffer;
 }
 
-struct dnet_read_request {
+//
+
+struct dnet_id_native {
+	std::vector<uint8_t>	id;
+	uint32_t		group_id;
+};
+
+struct dnet_cmd_native {
+	dnet_id_native	id;
+	int		status;
+	int		cmd;
+	int		backend_id;
+	uint64_t	trace_id;
+	uint64_t	flags;
+	uint64_t	trans;
+	uint64_t	size;
+};
+
+struct dnet_time_native {
+	uint64_t tsec;
+	uint64_t tnsec;
+};
+
+struct data_in_file {
+	int	fd;
+	off_t	local_offset;
+	size_t	fsize;
+	int 	on_exit;
+};
+
+struct data_place {
+	enum place_type {
+		IN_MEMORY,
+		IN_FILE,
+	};
+
+	data_in_file	in_file;
+	data_pointer	in_memory;
+
+	place_type where() const;
+
+	static data_place from_file(const data_in_file &in_file);
+	static data_place from_memory(const data_pointer &in_memory);
+};
+
+class isender;
+
+// All requests/responses must be inherited from common_request;
+// common_request is visible from dnet_io_req.
+struct common_request {
+	dnet_cmd_native			cmd;
+	std::shared_ptr<data_place>	data; // set if request/responses needs data // TODO: unique_ptr
+
+	virtual ~common_request() = default;
+
+	// TODO: uncomment pure virtual
+	void send(isender &) {}/* = 0;*/ // visitor
+	virtual void process() {}/* = 0;*/ // ask request to call its handler
+};
+
+//
+
+struct dnet_read_request : public common_request {
 	uint64_t ioflags;
 	uint64_t read_flags;
 	uint64_t data_offset;
@@ -31,7 +93,7 @@ struct dnet_read_request {
 	dnet_time deadline;
 };
 
-struct dnet_read_response {
+struct dnet_read_response : public common_request {
 	uint64_t record_flags;
 	uint64_t user_flags;
 
@@ -46,7 +108,7 @@ struct dnet_read_response {
 	uint64_t read_data_size;
 };
 
-struct dnet_write_request {
+struct dnet_write_request : public common_request {
 	uint64_t ioflags;
 	uint64_t user_flags;
 	dnet_time timestamp;
@@ -65,7 +127,7 @@ struct dnet_write_request {
 	dnet_time deadline;
 };
 
-struct dnet_lookup_response {
+struct dnet_lookup_response : public common_request {
 	uint64_t record_flags;
 	uint64_t user_flags;
 	std::string path;
@@ -82,12 +144,12 @@ struct dnet_lookup_response {
 	std::vector<unsigned char> data_checksum;
 };
 
-struct dnet_remove_request {
+struct dnet_remove_request : public common_request {
 	uint64_t ioflags;
 	dnet_time timestamp;
 };
 
-struct dnet_bulk_read_request {
+struct dnet_bulk_read_request : public common_request {
 	std::vector<dnet_id> keys;
 	uint64_t ioflags;
 	uint64_t read_flags;
@@ -96,7 +158,7 @@ struct dnet_bulk_read_request {
 };
 
 
-struct dnet_bulk_remove_request {
+struct dnet_bulk_remove_request : public common_request {
 	dnet_bulk_remove_request();
 	explicit dnet_bulk_remove_request(const std::vector<dnet_id> &keys_in);
 
@@ -108,7 +170,7 @@ struct dnet_bulk_remove_request {
 	std::vector<dnet_time> timestamps;
 };
 
-struct dnet_iterator_request {
+struct dnet_iterator_request : public common_request {
 	dnet_iterator_request();
 	dnet_iterator_request(uint32_t type, uint64_t flags,
 	                      const std::vector<dnet_iterator_range> &key_range,
@@ -123,7 +185,7 @@ struct dnet_iterator_request {
 	std::vector<uint32_t> groups;
 };
 
-struct dnet_iterator_response {
+struct dnet_iterator_response : public common_request {
 	uint64_t iterator_id;
 	dnet_raw_id key;
 	int status;
@@ -146,7 +208,7 @@ struct dnet_iterator_response {
 	uint64_t blob_id;
 };
 
-struct dnet_server_send_request {
+struct dnet_server_send_request : public common_request {
 	std::vector<dnet_raw_id> keys;
 	std::vector<int> groups;
 	uint64_t flags;
