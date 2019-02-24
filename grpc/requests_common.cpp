@@ -3,6 +3,25 @@
 
 namespace grpc_dnet {
 
+fb::Offset<fb_grpc_dnet::Cmd> serialize_cmd(fb::grpc::MessageBuilder &builder, ioremap::elliptics::dnet_cmd_native &cmd) {
+	return fb_grpc_dnet::CreateCmd(
+		builder,
+		fb_grpc_dnet::CreateIdDirect(
+			builder,
+			&cmd.id.id,
+			cmd.id.group_id
+		),
+		cmd.status,
+		cmd.cmd,
+		cmd.backend_id,
+		cmd.trace_id,
+		cmd.flags,
+		cmd.trans,
+		cmd.size
+	);
+}
+
+
 void deserialize_cmd(const fb_grpc_dnet::Cmd *fb_cmd, ioremap::elliptics::dnet_cmd_native &cmd) {
 	auto fb_cmd_id = fb_cmd->id();
 	auto fb_cmd_id_id = fb_cmd_id->id();
@@ -12,7 +31,11 @@ void deserialize_cmd(const fb_grpc_dnet::Cmd *fb_cmd, ioremap::elliptics::dnet_c
 			throw std::invalid_argument("Unexpected cmd.id size");
 		}
 
-		memcpy(cmd.id.id.data(), fb_cmd_id->id());
+		cmd.id.id.resize(DNET_ID_SIZE);
+		memcpy(cmd.id.id.data(), fb_cmd_id->id(), DNET_ID_SIZE);
+
+	} else {
+		cmd.id.id.clear();
 	}
 
 	cmd.id.group_id = fb_cmd_id->group_id();
@@ -33,7 +56,7 @@ void nanosec_to_dnet_time(uint64_t fb_time, ioremap::elliptics::dnet_time_native
 }
 
 
-uint64_t dnet_time_to_ns(const ioremap::elliptics::dnet_time_native &time) {
+uint64_t dnet_time_to_nanosec(const ioremap::elliptics::dnet_time_native &time) {
 	return time.tsec * 1000000000 + time.tnsec;
 }
 

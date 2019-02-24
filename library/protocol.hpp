@@ -27,8 +27,8 @@ static inline const char *dnet_dump_read_flags(uint64_t flags)
 //
 
 struct dnet_id_native {
-	std::array<uint8_t, DNET_ID_SIZE>	id;
-	uint32_t				group_id;
+	std::vector<uint8_t>	id;
+	uint32_t		group_id;
 };
 
 struct dnet_cmd_native {

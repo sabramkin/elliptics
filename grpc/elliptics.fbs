@@ -1,5 +1,7 @@
 namespace fb_grpc_dnet;
 
+// TODO: use number ids for fields
+
 // Common structs
 
 table Id {
@@ -77,8 +79,25 @@ table ReadRequest {
     data_size:uint64;
 }
 
+table ReadResponseHeader {
+    cmd:Cmd (required);
+
+    record_flags:uint64;
+    user_flags:uint64;
+
+    json_timestamp:uint64;
+    json_size:uint64;
+    json_capacity:uint64;
+    read_json_size:uint64;
+
+    data_timestamp:uint64;
+    data_size:uint64;
+    read_data_offset:uint64;
+    read_data_size:uint64;
+}
+
 table ReadResponse {
-    info:LookupResponse;
+    info:ReadResponseHeader;
     json:[uint8];
     data:[uint8];
 }
