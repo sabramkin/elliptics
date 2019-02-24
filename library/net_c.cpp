@@ -33,6 +33,8 @@
 
 #include <netinet/tcp.h>
 
+#include <blackhole/attribute.hpp>
+
 #include "elliptics.h"
 #include "elliptics/packet.h"
 #include "elliptics/interface.h"
@@ -46,6 +48,7 @@
 #define POLLRDHUP 0x2000
 #endif
 
+extern "C" {
 
 int dnet_fill_addr(struct dnet_addr *addr, const char *saddr, const int port, const int sock_type, const int proto)
 {
@@ -119,7 +122,7 @@ int dnet_create_addr_str(struct dnet_addr *addr, const char *addr_str, int addr_
 	char *tmp;
 
 	// space for NULL-byte
-	tmp = malloc(addr_len + 1);
+	tmp = static_cast<char*>(malloc(addr_len + 1));
 	if (!tmp) {
 		err = -ENOMEM;
 		goto err_out_exit;
@@ -173,7 +176,7 @@ void dnet_state_clean(struct dnet_net_state *st)
 		num++;
 	}
 
-	dnet_log(st->n, DNET_LOG_NOTICE, "Cleaned state %s, transactions freed: %d", dnet_state_dump_addr(st), num);
+	DNET_LOG(st->n, DNET_LOG_NOTICE, "Cleaned state %s, transactions freed: %d", dnet_state_dump_addr(st), num);
 }
 
 /*
@@ -197,9 +200,10 @@ static struct dnet_io_req *dnet_io_req_copy(struct dnet_net_state *st, struct dn
 		len += orig->fsize;
 	}
 
-	buf = r = malloc(len);
+	buf = r = static_cast<dnet_io_req*>(malloc(len));
 	if (!r) {
-		dnet_log(st->n, DNET_LOG_ERROR, "Not enough memory for io req queue fd: %d : %s %d", orig->fd, strerror(-err), err);
+		DNET_LOG(st->n, DNET_LOG_ERROR, "Not enough memory for io req queue fd: %d : %s %d",
+			 orig->fd, strerror(-err), err);
 		return NULL;
 	}
 	memset(r, 0, sizeof(struct dnet_io_req));
@@ -207,18 +211,18 @@ static struct dnet_io_req *dnet_io_req_copy(struct dnet_net_state *st, struct dn
 	r->context = dnet_access_context_get(orig->context);
 
 	if (orig->header && orig->hsize) {
-		r->header = buf + sizeof(struct dnet_io_req);
+		r->header = static_cast<char*>(buf) + sizeof(struct dnet_io_req);
 		r->hsize = orig->hsize;
 
 		offset = r->hsize;
 		memcpy(r->header, orig->header, r->hsize);
 	} else if (bypass) {
-		r->header = buf + sizeof(struct dnet_io_req);
+		r->header = static_cast<char*>(buf) + sizeof(struct dnet_io_req);
 		r->hsize = 0;
 	}
 
 	if (orig->data && orig->dsize) {
-		r->data = buf + sizeof(struct dnet_io_req) + offset;
+		r->data = static_cast<char*>(buf) + sizeof(struct dnet_io_req) + offset;
 		r->dsize = orig->dsize;
 
 		offset += r->dsize;
@@ -228,12 +232,13 @@ static struct dnet_io_req *dnet_io_req_copy(struct dnet_net_state *st, struct dn
 	if (orig->fd >= 0 && orig->fsize) {
 		if (bypass) {
 			if (r->data == NULL) {
-				r->data = buf + sizeof(struct dnet_io_req) + offset;
+				r->data = static_cast<char*>(buf) + sizeof(struct dnet_io_req) + offset;
 			}
 
-			err = dnet_read_ll(orig->fd, r->data + r->dsize, orig->fsize, orig->local_offset);
+			err = dnet_read_ll(orig->fd, static_cast<char*>(r->data) + r->dsize,
+				           orig->fsize, orig->local_offset);
 			if (err) {
-				dnet_log(st->n, DNET_LOG_ERROR, "Error while reading data: %s %d", strerror(-err), err);
+				DNET_LOG(st->n, DNET_LOG_ERROR, "Error while reading data: %s %d", strerror(-err), err);
 				goto err_out_free;
 			}
 
@@ -258,7 +263,7 @@ static struct dnet_io_req *dnet_io_req_copy(struct dnet_net_state *st, struct dn
 		 * because dnet_schedule_io requires it.
 		 */
 		if (r->hsize != sizeof(struct dnet_cmd)) {
-			r->data = r->header + sizeof(struct dnet_cmd);
+			r->data = static_cast<char*>(r->header) + sizeof(struct dnet_cmd);
 			r->dsize += r->hsize - sizeof(struct dnet_cmd);
 			r->hsize = sizeof(struct dnet_cmd);
 		}
@@ -286,7 +291,7 @@ static int dnet_io_req_queue(struct dnet_net_state *st, struct dnet_io_req *orig
 	 * If io_req hold fd instead of data it should be read here.
 	 */
 	if (st == st->n->st) {
-		dnet_log(st->n, DNET_LOG_DEBUG, "Sending to local state: data: 0x%lx data_size: %d",
+		DNET_LOG(st->n, DNET_LOG_DEBUG, "Sending to local state: data: 0x%lx data_size: %d",
 		         (unsigned long)orig->data, (int)orig->dsize);
 
 		r = dnet_io_req_copy(st, orig, 1);
@@ -350,19 +355,19 @@ ssize_t dnet_send_nolock(struct dnet_net_state *st, void *data, uint64_t size)
 		if (err < 0) {
 			err = -errno;
 			if (err != -EAGAIN) {
-				DNET_ERROR(n, "Failed to send packet: size: %" PRIu64 ", socket: %d", size,
-				               st->write_s);
+				DNET_LOG(n, DNET_LOG_ERROR,
+					 "Failed to send packet: size: %" PRIu64 ", socket: %d", size, st->write_s);
 			}
 			break;
 		}
 
 		if (err == 0) {
-			dnet_log(n, DNET_LOG_ERROR, "Peer %s has dropped the connection: socket: %d.", dnet_state_dump_addr(st), st->write_s);
+			DNET_LOG(n, DNET_LOG_ERROR, "Peer %s has dropped the connection: socket: %d.", dnet_state_dump_addr(st), st->write_s);
 			err = -ECONNRESET;
 			break;
 		}
 
-		data += err;
+		data = static_cast<char*>(data) + err;
 		size -= err;
 		st->send_offset += err;
 
@@ -380,7 +385,7 @@ ssize_t dnet_send(struct dnet_net_state *st, void *data, uint64_t size, struct d
 	r.header = data;
 	r.hsize = sizeof(struct dnet_cmd);
 	if (size > r.hsize) {
-		r.data = data + r.hsize;
+		r.data = static_cast<char*>(data) + r.hsize;
 		r.dsize = size - r.hsize;
 	}
 	r.fd = -1;
@@ -418,8 +423,9 @@ static ssize_t dnet_send_fd_nolock(struct dnet_net_state *st, int fd, uint64_t o
 			break;
 		if (err == 0) {
 			err = -ENODATA;
-			DNET_ERROR(st->n, "Looks like truncated file: fd: %d, offset: %" PRIu64 ", size: %" PRIu64 "",
-			           fd, offset, dsize);
+			DNET_LOG(st->n, DNET_LOG_ERROR,
+				 "Looks like truncated file: fd: %d, offset: %" PRIu64 ", size: %" PRIu64 "",
+			         fd, offset, dsize);
 			break;
 		}
 
@@ -499,12 +505,12 @@ int dnet_add_reconnect_state(struct dnet_node *n, const struct dnet_addr *addr, 
 
 	if (!join_state || n->need_exit) {
 		if (!join_state)
-			dnet_log(n, DNET_LOG_INFO, "Do not add reconnection addr: %s, join state: 0x%x.",
+			DNET_LOG(n, DNET_LOG_INFO, "Do not add reconnection addr: %s, join state: 0x%x.",
 				dnet_addr_string(addr), join_state);
 		goto out_exit;
 	}
 
-	a = malloc(sizeof(struct dnet_addr_storage));
+	a = static_cast<dnet_addr_storage*>(malloc(sizeof(struct dnet_addr_storage)));
 	if (!a) {
 		err = -ENOMEM;
 		goto out_exit;
@@ -517,7 +523,7 @@ int dnet_add_reconnect_state(struct dnet_node *n, const struct dnet_addr *addr, 
 	pthread_mutex_lock(&n->reconnect_lock);
 	list_for_each_entry(it, &n->reconnect_list, reconnect_entry) {
 		if (!memcmp(&it->addr, &a->addr, sizeof(struct dnet_addr))) {
-			dnet_log(n, DNET_LOG_INFO, "Address already exists in reconnection array: addr: %s, join state: 0x%x.",
+			DNET_LOG(n, DNET_LOG_INFO, "Address already exists in reconnection array: addr: %s, join state: 0x%x.",
 				dnet_addr_string(&a->addr), join_state);
 			err = -EEXIST;
 			break;
@@ -525,7 +531,7 @@ int dnet_add_reconnect_state(struct dnet_node *n, const struct dnet_addr *addr, 
 	}
 
 	if (!err) {
-		dnet_log(n, DNET_LOG_INFO, "Added reconnection addr: %s, join state: 0x%x.",
+		DNET_LOG(n, DNET_LOG_INFO, "Added reconnection addr: %s, join state: 0x%x.",
 			dnet_addr_string(&a->addr), join_state);
 		list_add_tail(&a->reconnect_entry, &n->reconnect_list);
 		n->reconnect_num++;
@@ -546,19 +552,19 @@ static int dnet_process_update_ids(struct dnet_net_state *st, struct dnet_cmd *c
 
 	if (cmd->size < sizeof(struct dnet_id_container)) {
 		err = -EINVAL;
-		dnet_log(st->n, DNET_LOG_ERROR, "failed to validate route-list container from state: %s, it's too small, err: %d",
+		DNET_LOG(st->n, DNET_LOG_ERROR, "failed to validate route-list container from state: %s, it's too small, err: %d",
 			dnet_state_dump_addr(st), err);
 		goto err_out_exit;
 	}
 
 	err = dnet_validate_id_container(id_container, cmd->size);
 	if (err) {
-		dnet_log(st->n, DNET_LOG_ERROR, "failed to validate route-list container from state: %s, err: %d",
+		DNET_LOG(st->n, DNET_LOG_ERROR, "failed to validate route-list container from state: %s, err: %d",
 			dnet_state_dump_addr(st), err);
 		goto err_out_exit;
 	}
 
-	backends = malloc(id_container->backends_count * sizeof(struct dnet_backends_id *));
+	backends = static_cast<dnet_backend_ids**>(malloc(id_container->backends_count * sizeof(struct dnet_backends_id *)));
 	if (!backends) {
 		err = -ENOMEM;
 		goto err_out_exit;
@@ -569,12 +575,12 @@ static int dnet_process_update_ids(struct dnet_net_state *st, struct dnet_cmd *c
 	for (i = 0; i < id_container->backends_count; ++i) {
 		err = dnet_idc_update_backend(st, backends[i]);
 		if (err) {
-			dnet_log(st->n, DNET_LOG_ERROR, "Failed to update route-list: state: %s, backend: %d, err: %d",
+			DNET_LOG(st->n, DNET_LOG_ERROR, "Failed to update route-list: state: %s, backend: %d, err: %d",
 				dnet_state_dump_addr(st),
 				backends[i]->backend_id,
 				err);
 		} else {
-			dnet_log(st->n, DNET_LOG_NOTICE, "Successfully updated route-list: state: %s, backend: %d",
+			DNET_LOG(st->n, DNET_LOG_NOTICE, "Successfully updated route-list: state: %s, backend: %d",
 				dnet_state_dump_addr(st),
 				backends[i]->backend_id);
 		}
@@ -589,7 +595,7 @@ static int dnet_process_control(struct dnet_net_state *st, struct dnet_cmd *cmd,
 {
 	switch (cmd->cmd) {
 	case DNET_CMD_UPDATE_IDS:
-		return dnet_process_update_ids(st, cmd, data);
+		return dnet_process_update_ids(st, cmd, static_cast<dnet_id_container*>(data));
 	default:
 		return -ENOTSUP;
 	}
@@ -599,7 +605,7 @@ static int dnet_process_reply(struct dnet_net_state *st, struct dnet_io_req *r) 
 	int err = 0;
 	struct dnet_node *n = st->n;
 	struct dnet_trans *t = NULL;
-	struct dnet_cmd *cmd = r->header;
+	struct dnet_cmd *cmd = static_cast<dnet_cmd*>(r->header);
 	uint64_t tid = cmd->trans;
 	uint64_t flags = cmd->flags;
 
@@ -629,7 +635,7 @@ static int dnet_process_reply(struct dnet_net_state *st, struct dnet_io_req *r) 
 	pthread_mutex_unlock(&st->trans_lock);
 
 	if (!t) {
-		dnet_log(n, DNET_LOG_ERROR, "%s: could not find transaction for reply: trans %llu",
+		DNET_LOG(n, DNET_LOG_ERROR, "%s: could not find transaction for reply: trans %llu",
 		         dnet_dump_id(&cmd->id), (unsigned long long)tid);
 		err = 0;
 		goto out;
@@ -699,7 +705,7 @@ int dnet_process_recv(struct dnet_net_state *st, struct dnet_io_req *r) {
 	int err = 0;
 	struct dnet_node *n = st->n;
 	struct dnet_net_state *forward_state = NULL;
-	struct dnet_cmd *cmd = r->header;
+	struct dnet_cmd *cmd = static_cast<dnet_cmd*>(r->header);
 	struct dnet_access_context *context = NULL;
 
 	if (cmd->flags & DNET_FLAGS_REPLY) {
@@ -778,8 +784,8 @@ static void dnet_state_remove_and_shutdown(struct dnet_net_state *st, int error)
 	if (error && (error != -EUCLEAN && error != -EEXIST))
 		level = DNET_LOG_ERROR;
 
-	dnet_log(st->n, level, "%s: resetting state: %p: %s [%d], sockets: %d/%d",
-			dnet_state_dump_addr(st), st, strerror(-error), error,
+	DNET_LOG(st->n, level, "%s: resetting state: %p: %s [%d], sockets: %d/%d",
+			dnet_state_dump_addr(st), static_cast<void*>(st), strerror(-error), error,
 			st->read_s, st->write_s);
 
 	pthread_mutex_lock(&st->send_lock);
@@ -831,7 +837,7 @@ void dnet_sock_close(struct dnet_node *n, int s)
 	if (n->addr_num) {
 		dnet_addr_string_raw(&n->addrs[0], addr_str, sizeof(addr_str));
 	}
-	dnet_log(n, DNET_LOG_NOTICE, "self: addr: %s, closing socket: %d", addr_str, s);
+	DNET_LOG(n, DNET_LOG_NOTICE, "self: addr: %s, closing socket: %d", addr_str, s);
 
 	shutdown(s, SHUT_RDWR);
 	close(s);
@@ -892,7 +898,7 @@ err_out_exit:
 
 static int dnet_auth_complete(struct dnet_addr *addr, struct dnet_cmd *cmd, void *priv)
 {
-	struct dnet_node *n = priv;
+	struct dnet_node *n = static_cast<dnet_node*>(priv);
 	struct dnet_net_state *state;
 
 	if (!addr || !cmd)
@@ -901,14 +907,14 @@ static int dnet_auth_complete(struct dnet_addr *addr, struct dnet_cmd *cmd, void
 	/* this means this callback at least has state and cmd */
 	if (!is_trans_destroyed(cmd)) {
 		if (cmd->status == 0) {
-			dnet_log(n, DNET_LOG_INFO, "%s: authentication request succeeded", dnet_addr_string(addr));
+			DNET_LOG(n, DNET_LOG_INFO, "%s: authentication request succeeded", dnet_addr_string(addr));
 			return 0;
 		}
 
 		state = dnet_state_search_by_addr(n, addr);
 
-		dnet_log(n, DNET_LOG_ERROR, "%s: authentication request failed: %d, state to reset: %p",
-				dnet_addr_string(addr), cmd->status, state);
+		DNET_LOG(n, DNET_LOG_ERROR, "%s: authentication request failed: %d, state to reset: %p",
+		         dnet_addr_string(addr), cmd->status, static_cast<void*>(state));
 
 		if (state) {
 			state->__join_state = 0;
@@ -958,7 +964,7 @@ int dnet_state_micro_init(struct dnet_net_state *st,
 	err = pthread_rwlock_init(&st->idc_lock, NULL);
 	if (err) {
 		err = -err;
-		dnet_log(n, DNET_LOG_ERROR, "Failed to initialize idc mutex: err: %d", err);
+		DNET_LOG(n, DNET_LOG_ERROR, "Failed to initialize idc mutex: err: %d", err);
 		goto err_out;
 	}
 
@@ -970,7 +976,7 @@ int dnet_state_micro_init(struct dnet_net_state *st,
 	err = pthread_mutex_init(&st->trans_lock, NULL);
 	if (err) {
 		err = -err;
-		dnet_log(n, DNET_LOG_ERROR, "Failed to initialize transaction mutex: %d", err);
+		DNET_LOG(n, DNET_LOG_ERROR, "Failed to initialize transaction mutex: %d", err);
 		goto err_out_idc_destroy;
 	}
 
@@ -978,14 +984,14 @@ int dnet_state_micro_init(struct dnet_net_state *st,
 	err = pthread_mutex_init(&st->send_lock, NULL);
 	if (err) {
 		err = -err;
-		dnet_log(n, DNET_LOG_ERROR, "Failed to initialize send mutex: %d", err);
+		DNET_LOG(n, DNET_LOG_ERROR, "Failed to initialize send mutex: %d", err);
 		goto err_out_trans_destroy;
 	}
 
 	err = pthread_cond_init(&st->send_wait, NULL);
 	if (err) {
 		err = -err;
-		dnet_log(n, DNET_LOG_ERROR, "Failed to initialize send cond: %d", err);
+		DNET_LOG(n, DNET_LOG_ERROR, "Failed to initialize send cond: %d", err);
 		goto err_out_send_destroy;
 	}
 
@@ -1061,7 +1067,7 @@ struct dnet_net_state *dnet_state_create(struct dnet_node *n,
 		}
 	}
 
-	st = calloc(1, sizeof(struct dnet_net_state));
+	st = static_cast<dnet_net_state*>(calloc(1, sizeof(struct dnet_net_state)));
 	if (!st)
 		goto err_out_close;
 
@@ -1079,7 +1085,7 @@ struct dnet_net_state *dnet_state_create(struct dnet_node *n,
 		err = socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, PF_UNIX, sockets);
 		if (err < 0) {
 			err = -errno;
-			DNET_ERROR(n, "%s: failed to create socket pair", dnet_addr_string(addr));
+			DNET_LOG(n, DNET_LOG_ERROR, "%s: failed to create socket pair", dnet_addr_string(addr));
 			goto err_out_free;
 		}
 
@@ -1091,7 +1097,7 @@ struct dnet_net_state *dnet_state_create(struct dnet_node *n,
 		st->write_s = dup(s);
 		if (st->write_s < 0) {
 			err = -errno;
-			DNET_ERROR(n, "%s: failed to duplicate socket", dnet_addr_string(addr));
+			DNET_LOG(n, DNET_LOG_ERROR, "%s: failed to duplicate socket", dnet_addr_string(addr));
 			goto err_out_free;
 		}
 	}
@@ -1107,7 +1113,7 @@ struct dnet_net_state *dnet_state_create(struct dnet_node *n,
 
 	fcntl(st->write_s, F_SETFD, FD_CLOEXEC);
 
-	dnet_log(n, DNET_LOG_DEBUG, "dnet_state_create: %s: sockets: %d/%d, server: %d, addrs_count: %d, backends_count: %d",
+	DNET_LOG(n, DNET_LOG_DEBUG, "dnet_state_create: %s: sockets: %d/%d, server: %d, addrs_count: %d, backends_count: %d",
 			dnet_addr_string(addr), st->read_s, st->write_s, server_node, addrs_count, backends_count);
 
 	err = dnet_state_micro_init(st, n, addr, join);
@@ -1118,16 +1124,16 @@ struct dnet_net_state *dnet_state_create(struct dnet_node *n,
 		err = setsockopt(st->read_s, IPPROTO_IP, IP_TOS, &n->client_prio, 4);
 		if (err) {
 			err = -errno;
-			DNET_ERROR(n, "could not set read client prio %d", n->client_prio);
+			DNET_LOG(n, DNET_LOG_ERROR, "could not set read client prio %d", n->client_prio);
 		}
 		err = setsockopt(st->write_s, IPPROTO_IP, IP_TOS, &n->client_prio, 4);
 		if (err) {
 			err = -errno;
-			DNET_ERROR(n, "could not set write client prio %d", n->client_prio);
+			DNET_LOG(n, DNET_LOG_ERROR, "could not set write client prio %d", n->client_prio);
 		}
 
 		if (!err) {
-			dnet_log(n, DNET_LOG_INFO, "%s: client net TOS value set to %d",
+			DNET_LOG(n, DNET_LOG_INFO, "%s: client net TOS value set to %d",
 					dnet_addr_string(addr), n->client_prio);
 		}
 	}
@@ -1212,7 +1218,7 @@ err_out_close:
 
 err_out_exit:
 	if (err == -EEXIST)
-		dnet_log(n, DNET_LOG_NOTICE, "%s: state already exists", dnet_addr_string(addr));
+		DNET_LOG(n, DNET_LOG_NOTICE, "%s: state already exists", dnet_addr_string(addr));
 	*errp = err;
 	return NULL;
 }
@@ -1255,8 +1261,8 @@ static void dnet_state_send_clean(struct dnet_net_state *st)
 
 void dnet_state_destroy(struct dnet_net_state *st)
 {
-	dnet_log(st->n, DNET_LOG_NOTICE, "Going to destroy state %s [%p], socket: %d/%d, addr-num: %d.",
-		dnet_addr_string(&st->addr), st, st->read_s, st->write_s, st->addr_num);
+	DNET_LOG(st->n, DNET_LOG_NOTICE, "Going to destroy state %s [%p], socket: %d/%d, addr-num: %d.",
+		 dnet_addr_string(&st->addr), static_cast<void*>(st), st->read_s, st->write_s, st->addr_num);
 
 	dnet_state_remove(st);
 
@@ -1276,7 +1282,7 @@ void dnet_state_destroy(struct dnet_net_state *st)
 	pthread_mutex_destroy(&st->send_lock);
 	pthread_mutex_destroy(&st->trans_lock);
 
-	dnet_log(st->n, DNET_LOG_NOTICE, "Freeing state %s, socket: %d/%d, addr-num: %d.",
+	DNET_LOG(st->n, DNET_LOG_NOTICE, "Freeing state %s, socket: %d/%d, addr-num: %d.",
 		dnet_addr_string(&st->addr), st->read_s, st->write_s, st->addr_num);
 
 	free(st->addrs);
@@ -1305,11 +1311,11 @@ int dnet_send_request(struct dnet_net_state *st, struct dnet_io_req *r)
 	}
 
 	if (1) {
-		struct dnet_cmd *cmd = r->header ? r->header : r->data;
+		struct dnet_cmd *cmd = static_cast<dnet_cmd*>(r->header ? r->header : r->data);
 		const enum dnet_log_level level = st->send_offset == 0 ? DNET_LOG_NOTICE : DNET_LOG_DEBUG;
 
 		dnet_logger_set_trace_id(cmd->trace_id, cmd->flags & DNET_FLAGS_TRACE_BIT);
-		dnet_log(st->n, level, "%s: %s: sending trans: %lld -> %s/%d: size: %llu, cflags: %s, start-sent: "
+		DNET_LOG(st->n, level, "%s: %s: sending trans: %lld -> %s/%d: size: %llu, cflags: %s, start-sent: "
 		                       "%zd/%zd, send-queue-time: %lu usecs",
 		         dnet_dump_id(&cmd->id), dnet_cmd_string(cmd->cmd), (unsigned long long)cmd->trans,
 		         dnet_addr_string(&st->addr), cmd->backend_id, (unsigned long long)cmd->size,
@@ -1317,14 +1323,14 @@ int dnet_send_request(struct dnet_net_state *st, struct dnet_io_req *r)
 	}
 
 	if (r->hsize && r->header && st->send_offset < r->hsize) {
-		err = dnet_send_nolock(st, r->header + offset, r->hsize - offset);
+		err = dnet_send_nolock(st, static_cast<char*>(r->header) + offset, r->hsize - offset);
 		if (err)
 			goto err_out_exit;
 	}
 
 	if (r->dsize && r->data && st->send_offset < (r->dsize + r->hsize)) {
 		offset = st->send_offset - r->hsize;
-		err = dnet_send_nolock(st, r->data + offset, r->dsize - offset);
+		err = dnet_send_nolock(st, static_cast<char*>(r->data) + offset, r->dsize - offset);
 		if (err)
 			goto err_out_exit;
 	}
@@ -1337,11 +1343,11 @@ int dnet_send_request(struct dnet_net_state *st, struct dnet_io_req *r)
 	}
 
 	if (r->hsize > sizeof(struct dnet_cmd)) {
-		struct dnet_cmd *cmd = r->header;
+		struct dnet_cmd *cmd = static_cast<dnet_cmd*>(r->header);
 		int nonblocking = !!(cmd->flags & DNET_FLAGS_NOLOCK);
 
-		dnet_log(st->n, DNET_LOG_DEBUG, "%s: %s: SENT %s cmd: %s: cmd-size: %llu, nonblocking: %d",
-			dnet_state_dump_addr(st), dnet_dump_id(r->header),
+		DNET_LOG(st->n, DNET_LOG_DEBUG, "%s: %s: SENT %s cmd: %s: cmd-size: %llu, nonblocking: %d",
+			dnet_state_dump_addr(st), dnet_dump_id(static_cast<dnet_id*>(r->header)),
 			nonblocking ? "nonblocking" : "blocking",
 			dnet_cmd_string(cmd->cmd),
 			(unsigned long long)cmd->size, nonblocking);
@@ -1350,7 +1356,7 @@ int dnet_send_request(struct dnet_net_state *st, struct dnet_io_req *r)
 err_out_exit:
 
 	if (1) {
-		struct dnet_cmd *cmd = r->header ? r->header : r->data;
+		struct dnet_cmd *cmd = static_cast<dnet_cmd*>(r->header ? r->header : r->data);
 		enum dnet_log_level level = DNET_LOG_DEBUG;
 		struct timespec ts;
 
@@ -1363,7 +1369,7 @@ err_out_exit:
 			dnet_access_context_add_uint(r->context, "send_queue_time", r->queue_time);
 			dnet_access_context_add_uint(r->context, "response_size", total_size);
 		}
-		dnet_log(st->n, level, "%s: %s: sending trans: %lld -> %s/%d: size: %llu, cflags: %s, finish-sent: "
+		DNET_LOG(st->n, level, "%s: %s: sending trans: %lld -> %s/%d: size: %llu, cflags: %s, finish-sent: "
 		                       "%zd/%zd, send-queue-time: %lu usecs, send-time: %lu usecs",
 		         dnet_dump_id(&cmd->id), dnet_cmd_string(cmd->cmd), (unsigned long long)cmd->trans,
 		         dnet_addr_string(&st->addr), cmd->backend_id, (unsigned long long)cmd->size,
@@ -1390,7 +1396,7 @@ err_out_exit:
 	}
 
 	if (1) {
-		struct dnet_cmd *cmd = r->header ? r->header : r->data;
+		struct dnet_cmd *cmd = static_cast<dnet_cmd*>(r->header ? r->header : r->data);
 		if (!(cmd->flags & DNET_FLAGS_REPLY)) {
 			struct dnet_trans *t = NULL;
 			pthread_mutex_lock(&st->trans_lock);
@@ -1435,3 +1441,5 @@ err_out_print_wrong_param:
 				addr, DNET_CONF_ADDR_DELIM, DNET_CONF_ADDR_DELIM);
 	return -EINVAL;
 }
+
+} // extern "C"

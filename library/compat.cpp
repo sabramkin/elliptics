@@ -31,6 +31,8 @@
 
 #include "elliptics.h"
 
+extern "C" {
+
 /*
  * Supported in Linux only so far
  */
@@ -173,3 +175,4 @@ int dnet_sendfile(struct dnet_net_state *st, int fd, uint64_t *offset, uint64_t 
 }
 #endif
 
+} // extern "C"

@@ -29,6 +29,8 @@
 
 #include "crypto/sha512.h"
 
+extern "C" {
+
 static void dnet_transform_final(void *dst, const void *src, unsigned int *rsize, unsigned int rs)
 {
 	if (*rsize < rs) {
@@ -166,3 +168,5 @@ int dnet_crypto_init(struct dnet_node *n)
 
 	return 0;
 }
+
+} // extern "C"

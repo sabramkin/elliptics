@@ -1,11 +1,13 @@
 #include "tests.h"
 #include "elliptics.h"
 
+extern "C" {
+
 void dnet_node_set_test_settings(struct dnet_node *n, struct dnet_test_settings *settings)
 {
 	pthread_rwlock_wrlock(&n->test_settings_lock);
 	if (!n->test_settings) {
-		n->test_settings = malloc(sizeof(struct dnet_test_settings));
+		n->test_settings = static_cast<dnet_test_settings*>(malloc(sizeof(struct dnet_test_settings)));
 	}
 	memcpy(n->test_settings, settings, sizeof(struct dnet_test_settings));
 	pthread_rwlock_unlock(&n->test_settings_lock);
@@ -22,3 +24,5 @@ int dnet_node_get_test_settings(struct dnet_node *n, struct dnet_test_settings *
 	pthread_rwlock_unlock(&n->test_settings_lock);
 	return err;
 }
+
+} // extern "C"

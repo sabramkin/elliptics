@@ -26,10 +26,14 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include <blackhole/attribute.hpp>
+
 #include "elliptics.h"
 #include "elliptics/packet.h"
 #include "elliptics/interface.h"
 #include "library/logger.hpp"
+
+extern "C" {
 
 /*
  * Ascending transaction order
@@ -87,7 +91,7 @@ int dnet_trans_insert_nolock(struct dnet_net_state *st, struct dnet_trans *a)
 	}
 
 	if (a->st && a->st->n)
-		dnet_log(a->st->n, DNET_LOG_NOTICE, "%s: %s: added trans: %llu -> %s/%d",
+		DNET_LOG(a->st->n, DNET_LOG_NOTICE, "%s: %s: added trans: %llu -> %s/%d",
 			dnet_dump_id(&a->cmd.id), dnet_cmd_string(a->cmd.cmd), (unsigned long long)a->trans,
 			dnet_addr_string(&a->st->addr), a->cmd.backend_id);
 
@@ -190,7 +194,7 @@ void dnet_trans_remove_timer_nolock(struct dnet_net_state *st, struct dnet_trans
 void dnet_trans_remove_nolock(struct dnet_net_state *st, struct dnet_trans *t)
 {
 	if (!t->trans_entry.rb_parent_color) {
-		dnet_log(st->n, DNET_LOG_ERROR, "%s: trying to remove out-of-trans-tree transaction %llu.",
+		DNET_LOG(st->n, DNET_LOG_ERROR, "%s: trying to remove out-of-trans-tree transaction %llu.",
 			dnet_dump_id(&t->cmd.id), (unsigned long long)t->trans);
 		return;
 	}
@@ -216,7 +220,7 @@ struct dnet_trans *dnet_trans_alloc(struct dnet_node *n, uint64_t size)
 {
 	struct dnet_trans *t;
 
-	t = calloc(1, sizeof(struct dnet_trans) + size);
+	t = static_cast<dnet_trans*>(calloc(1, sizeof(struct dnet_trans) + size));
 	if (!t)
 		goto err_out_exit;
 
@@ -267,7 +271,7 @@ void dnet_trans_destroy(struct dnet_trans *t)
 	if (st && st->n && t->command) {
 		if (t->cmd.status != -ETIMEDOUT) {
 			if (st->stall) {
-				dnet_log(st->n, DNET_LOG_INFO, "%s/%d: resetting state stall counter",
+				DNET_LOG(st->n, DNET_LOG_INFO, "%s/%d: resetting state stall counter",
 					 dnet_state_dump_addr(st), t->cmd.backend_id);
 			}
 
@@ -368,7 +372,7 @@ int dnet_trans_alloc_send_state(struct dnet_session *s, struct dnet_net_state *s
 	req.hsize = sizeof(struct dnet_cmd) + ctl->size;
 	req.fd = -1;
 
-	dnet_log(n, DNET_LOG_INFO, "%s: %s: created %s",
+	DNET_LOG(n, DNET_LOG_INFO, "%s: %s: created %s",
 			dnet_dump_id(&cmd->id),
 			dnet_cmd_string(cmd->cmd),
 			dnet_print_trans(t)
@@ -405,7 +409,7 @@ int dnet_trans_alloc_send(struct dnet_session *s, struct dnet_trans_control *ctl
 	}
 
 	if (!st) {
-		dnet_log(n, DNET_LOG_ERROR, "%s: direct: %d, direct-addr: %s, forward: %d: trans_send: could not find network state for address",
+		DNET_LOG(n, DNET_LOG_ERROR, "%s: direct: %d, direct-addr: %s, forward: %d: trans_send: could not find network state for address",
 			dnet_dump_id(&ctl->id),
 			!!(dnet_session_get_cflags(s) & DNET_FLAGS_DIRECT), dnet_addr_string(&s->direct_addr),
 			!!(dnet_session_get_cflags(s) & DNET_FLAGS_FORWARD));
@@ -467,7 +471,7 @@ void dnet_update_stall_backend_weights(struct list_head *stall_transactions)
 					dnet_set_backend_weight(st, t->cmd.backend_id, 0, new_disk_weight);
 				}
 
-				dnet_log(st->n, DNET_LOG_INFO, "%s/%d: TIMEOUT: update backend weight: weight: "
+				DNET_LOG(st->n, DNET_LOG_INFO, "%s/%d: TIMEOUT: update backend weight: weight: "
 						"cache: %f -> %f, disk: %f -> %f",
 					 dnet_state_dump_addr(st), t->cmd.backend_id,
 					 old_cache_weight, new_cache_weight,
@@ -527,7 +531,7 @@ int dnet_trans_iterate_move_transaction(struct dnet_net_state *st, struct list_h
 		// but blackhole currently has higher priority for scoped attributes =(
 		dnet_logger_set_trace_id(t->cmd.trace_id, t->cmd.flags & DNET_FLAGS_TRACE_BIT);
 
-		dnet_log(st->n, DNET_LOG_ERROR, "%s: %s: TIMEOUT/need-exit %s, "
+		DNET_LOG(st->n, DNET_LOG_ERROR, "%s: %s: TIMEOUT/need-exit %s, "
 				"need-exit: %d, time: %ld",
 				dnet_dump_id(&t->cmd.id), dnet_cmd_string(t->cmd.cmd),
 				dnet_print_trans(t),
@@ -551,7 +555,7 @@ int dnet_trans_iterate_move_transaction(struct dnet_net_state *st, struct list_h
 
 		if (!list_empty(&t->trans_list_entry)) {
 			list_del(&t->trans_list_entry);
-			dnet_log(st->n, DNET_LOG_ERROR, "%s: %s: TIMEOUT/need-exit: stall %s, "
+			DNET_LOG(st->n, DNET_LOG_ERROR, "%s: %s: TIMEOUT/need-exit: stall %s, "
 					"it was moved into some timeout list, but yet it exists in timer tree, "
 					"need-exit: %d, time: %ld",
 					dnet_dump_id(&t->cmd.id), dnet_cmd_string(t->cmd.cmd),
@@ -581,7 +585,7 @@ static int dnet_ping_stall_node_complete(struct dnet_addr *addr __unused, struct
 	struct dnet_net_state *st;
 
 	if (is_trans_destroyed(cmd)) {
-	        ping_private = priv;
+	        ping_private = static_cast<dnet_ping_node_private*>(priv);
 		st = ping_private->net_state;
 
 		dnet_session_destroy(ping_private->session);
@@ -601,7 +605,7 @@ static int dnet_ping_stall_node(struct dnet_net_state *st)
 	struct dnet_session *sess;
 	struct dnet_ping_node_private *ping_private;
 
-	ping_private = malloc(sizeof(struct dnet_ping_node_private));
+	ping_private = static_cast<dnet_ping_node_private*>(malloc(sizeof(struct dnet_ping_node_private)));
 	if (!ping_private)
 		return -ENOMEM;
 
@@ -644,7 +648,7 @@ static int dnet_trans_check_stall(struct dnet_net_state *st, struct list_head *h
 	if (trans_timeout) {
 		st->stall++;
 
-		dnet_log(st->n, DNET_LOG_ERROR, "%s: TIMEOUT: transactions: %d, stall counter: %d/%lu",
+		DNET_LOG(st->n, DNET_LOG_ERROR, "%s: TIMEOUT: transactions: %d, stall counter: %d/%lu",
 				dnet_state_dump_addr(st), trans_timeout, st->stall, st->n->stall_count);
 
 		if (st->stall >= st->n->stall_count && st != st->n->st)
@@ -673,9 +677,9 @@ static void dnet_check_all_states(struct dnet_node *n)
 	}
 
 	if (max_state_count > 0) {
-		stall_states = malloc(max_state_count * sizeof(struct dnet_net_state *));
+		stall_states = static_cast<dnet_net_state**>(malloc(max_state_count * sizeof(struct dnet_net_state *)));
 		if (!stall_states) {
-			dnet_log(n, DNET_LOG_ERROR, "dnet_check_all_states: malloc failed for stall_states: %d", max_state_count);
+			DNET_LOG(n, DNET_LOG_ERROR, "dnet_check_all_states: malloc failed for stall_states: %d", max_state_count);
 			pthread_mutex_unlock(&n->state_lock);
 			return;
 		}
@@ -696,7 +700,7 @@ static void dnet_check_all_states(struct dnet_node *n)
 		st->stall = 0;
 		err = dnet_ping_stall_node(st);
 		if (err)
-			dnet_log(st->n, DNET_LOG_ERROR, "dnet_ping_stall_node failed: %s [%d]", strerror(-err), err);
+			DNET_LOG(st->n, DNET_LOG_ERROR, "dnet_ping_stall_node failed: %s [%d]", strerror(-err), err);
 		dnet_state_put(st);
 	}
 
@@ -706,7 +710,7 @@ static void dnet_check_all_states(struct dnet_node *n)
 
 static void *dnet_reconnect_process(void *data)
 {
-	struct dnet_node *n = data;
+	struct dnet_node *n = static_cast<dnet_node*>(data);
 	long i, timeout;
 	struct timespec ts1, ts2;
 
@@ -715,15 +719,15 @@ static void *dnet_reconnect_process(void *data)
 	if (!n->check_timeout)
 		n->check_timeout = 10;
 
-	dnet_log(n, DNET_LOG_INFO, "Started reconnection thread. Timeout: %lu seconds. Route table update every %lu seconds.",
+	DNET_LOG(n, DNET_LOG_INFO, "Started reconnection thread. Timeout: %lu seconds. Route table update every %lu seconds.",
 			n->check_timeout, n->check_timeout);
 
 	while (!n->need_exit) {
 		clock_gettime(CLOCK_MONOTONIC_RAW, &ts1);
 
-		dnet_log(n, DNET_LOG_INFO, "Started reconnection process");
+		DNET_LOG(n, DNET_LOG_INFO, "Started reconnection process");
 		dnet_reconnect_and_check_route_table(n);
-		dnet_log(n, DNET_LOG_INFO, "Finished reconnection process");
+		DNET_LOG(n, DNET_LOG_INFO, "Finished reconnection process");
 
 		clock_gettime(CLOCK_MONOTONIC_RAW, &ts2);
 
@@ -743,7 +747,7 @@ static void *dnet_reconnect_process(void *data)
 
 static void *dnet_check_process(void *data)
 {
-	struct dnet_node *n = data;
+	struct dnet_node *n = static_cast<dnet_node*>(data);
 
 	dnet_set_name("dnet_check");
 
@@ -762,7 +766,7 @@ int dnet_check_thread_start(struct dnet_node *n)
 	err = pthread_create(&n->check_tid, NULL, dnet_check_process, n);
 	if (err) {
 		err = -err;
-		dnet_log(n, DNET_LOG_ERROR, "Failed to start tree checking thread: err: %d.",
+		DNET_LOG(n, DNET_LOG_ERROR, "Failed to start tree checking thread: err: %d.",
 				err);
 		goto err_out_exit;
 	}
@@ -770,7 +774,7 @@ int dnet_check_thread_start(struct dnet_node *n)
 	err = pthread_create(&n->reconnect_tid, NULL, dnet_reconnect_process, n);
 	if (err) {
 		err = -err;
-		dnet_log(n, DNET_LOG_ERROR, "Failed to start reconnection thread: err: %d.",
+		DNET_LOG(n, DNET_LOG_ERROR, "Failed to start reconnection thread: err: %d.",
 				err);
 		goto err_out_stop_check_thread;
 	}
@@ -788,5 +792,7 @@ void dnet_check_thread_stop(struct dnet_node *n)
 {
 	pthread_join(n->reconnect_tid, NULL);
 	pthread_join(n->check_tid, NULL);
-	dnet_log(n, DNET_LOG_NOTICE, "Checking thread stopped");
+	DNET_LOG(n, DNET_LOG_NOTICE, "Checking thread stopped");
 }
+
+} // extern "C"

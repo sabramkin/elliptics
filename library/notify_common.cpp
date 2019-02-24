@@ -35,6 +35,8 @@
 #include "elliptics/packet.h"
 #include "elliptics/interface.h"
 
+extern "C" {
+
 static int dnet_request_notification_raw(struct dnet_session *s, struct dnet_id *id,
 	transaction_callback complete,
 	void *priv, uint64_t cflags)
@@ -73,3 +75,4 @@ int dnet_drop_notification(struct dnet_session *s, struct dnet_id *id)
 	return dnet_request_notification_raw(s, id, NULL, NULL, cflags);
 }
 
+} // extern "C"

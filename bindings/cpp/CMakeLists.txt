@@ -23,19 +23,20 @@ set(ELLIPTICS_CLIENT_SRCS
     newapi/bulk_remove_handler.cpp
     ../../library/protocol.cpp
     ../../library/msgpack_conv.cpp
-    ../../library/compat.c
-    ../../library/crypto.c
+    ../../library/compat.cpp
+    ../../library/crypto.cpp
     ../../library/crypto/sha512.c
     ../../library/dnet_common.c
-    ../../library/net.c
+    ../../library/dnet_common.cpp
+    ../../library/net_c.cpp
     ../../library/net.cpp
-    ../../library/node.c
-    ../../library/notify_common.c
-    ../../library/pool.c
+    ../../library/node.cpp
+    ../../library/notify_common.cpp
+    ../../library/pool.cpp
     ../../library/request_queue.cpp
     ../../library/rbtree.c
-    ../../library/trans.c
-    ../../library/tests.c
+    ../../library/trans.cpp
+    ../../library/tests.cpp
     ../../library/common.cpp
     ../../library/access_context.cpp
 # Added includes for better IDE's experience
