@@ -89,11 +89,13 @@ struct dnet_read_response : common_request {
 	uint64_t json_size;
 	uint64_t json_capacity;
 	uint64_t read_json_size;
+	data_pointer json;
 
 	dnet_time data_timestamp;
 	uint64_t data_size;
 	uint64_t read_data_offset;
 	uint64_t read_data_size;
+	data_place data;
 };
 
 struct dnet_write_request : common_request {
@@ -104,11 +106,13 @@ struct dnet_write_request : common_request {
 	uint64_t json_size;
 	uint64_t json_capacity;
 	dnet_time json_timestamp;
+	data_pointer json;
 
 	uint64_t data_offset;
 	uint64_t data_size;
 	uint64_t data_capacity;
 	uint64_t data_commit_size;
+	data_pointer data;
 
 	uint64_t cache_lifetime;
 
