@@ -341,27 +341,27 @@ int blob_file_info_new(eblob_backend_config *c, void *state, dnet_cmd *cmd, stru
 		}
 	}
 
-	auto response = serialize(dnet_lookup_response{
-		wc.flags,
-		ehdr.flags,
-		std::move(filename),
+	dnet_lookup_response response;
+	response.record_flags = wc.flags;
+	response.user_flags = ehdr.flags;
+	response.path = std::move(filename);
+	response.json_timestamp = jhdr.timestamp;
+	response.json_offset = wc.data_offset + json_offset;
+	response.json_size = json_size;
+	response.json_capacity = jhdr.capacity;
+	response.json_checksum = std::move(json_checksum);
+	response.data_timestamp = ehdr.timestamp;
+	response.data_offset = wc.data_offset + data_offset;
+	response.data_size = data_size;
+	response.data_checksum = std::move(data_checksum);
 
-		jhdr.timestamp,
-		wc.data_offset + json_offset,
-		json_size,
-		jhdr.capacity,
-		std::move(json_checksum),
+	auto response_packed = serialize(std::move(response));
 
-		ehdr.timestamp,
-		wc.data_offset + data_offset,
-		data_size,
-		std::move(data_checksum),
-	});
-
-	err = dnet_send_reply(state, cmd, response.data(), response.size(), 0, context);
+	err = dnet_send_reply(state, cmd, response_packed.data(), response_packed.size(), 0, context);
 	if (err) {
 		DNET_LOG_ERROR(c->blog, "{}: EBLOB: blob-file-info-new: dnet_send_reply: data: {:p}, size: {}: {} [{}]",
-		               dnet_dump_id(&cmd->id), response.data(), response.size(), strerror(-err), err);
+		               dnet_dump_id(&cmd->id), response_packed.data(), response_packed.size(),
+		               strerror(-err), err);
 		return err;
 	}
 
@@ -644,38 +644,38 @@ static int blob_read_new_impl(eblob_backend_config *c,
 
 	cmd_stats->size = json.size() + data_size;
 
-	auto header = serialize(dnet_read_response{
-		wc.flags,
-		ehdr.flags,
+	dnet_read_response response;
+	response.record_flags = wc.flags;
+	response.user_flags = ehdr.flags;
+	response.json_timestamp = jhdr.timestamp;
+	response.json_size = jhdr.size;
+	response.json_capacity = jhdr.capacity;
+	response.read_json_size = json.size();
+	response.data_timestamp = ehdr.timestamp;
+	response.data_size = wc.size - jhdr.capacity;
+	response.read_data_offset = request.data_offset;
+	response.read_data_size = data_size;
 
-		jhdr.timestamp,
-		jhdr.size,
-		jhdr.capacity,
-		json.size(),
+	auto header = serialize(std::move(response));
 
-		ehdr.timestamp,
-		wc.size - jhdr.capacity,
-		request.data_offset,
-		data_size,
-	});
-
-	auto response = data_pointer::allocate(sizeof(*cmd) + header.size() + json.size());
-	memcpy(response.data(), cmd, sizeof(*cmd));
-	memcpy(response.skip(sizeof(*cmd)).data(), header.data(), header.size());
+	auto response_packed = data_pointer::allocate(sizeof(*cmd) + header.size() + json.size());
+	memcpy(response_packed.data(), cmd, sizeof(*cmd));
+	memcpy(response_packed.skip(sizeof(*cmd)).data(), header.data(), header.size());
 	if (!json.empty())
-		memcpy(response.skip(sizeof(*cmd) + header.size()).data(), json.data(), json.size());
+		memcpy(response_packed.skip(sizeof(*cmd) + header.size()).data(), json.data(), json.size());
 
-	response.data<dnet_cmd>()->size = header.size() + json.size() + data_size;
-	response.data<dnet_cmd>()->flags |= DNET_FLAGS_REPLY | (last_read ? 0 : DNET_FLAGS_MORE);
-	response.data<dnet_cmd>()->flags &= ~DNET_FLAGS_NEED_ACK;
+	response_packed.data<dnet_cmd>()->size = header.size() + json.size() + data_size;
+	response_packed.data<dnet_cmd>()->flags |= DNET_FLAGS_REPLY | (last_read ? 0 : DNET_FLAGS_MORE);
+	response_packed.data<dnet_cmd>()->flags &= ~DNET_FLAGS_NEED_ACK;
 
 	cmd->flags &= ~DNET_FLAGS_NEED_ACK;
-	err = dnet_send_fd((dnet_net_state *)state, response.data(), response.size(),
+	err = dnet_send_fd((dnet_net_state *)state, response_packed.data(), response_packed.size(),
 	                   wc.data_fd, data_offset, data_size, 0, context);
 
 	if (err) {
 		DNET_LOG_ERROR(c->blog, "{}: EBLOB: blob-read-new: dnet_send_reply: data {:p}, size: {}: {} [{}]",
-		               dnet_dump_id(&cmd->id), response.data(), response.size(), strerror(-err), err);
+		               dnet_dump_id(&cmd->id), response_packed.data(), response_packed.size(),
+		               strerror(-err), err);
 		return err;
 	}
 
@@ -980,27 +980,27 @@ int blob_write_new(eblob_backend_config *c, void *state, dnet_cmd *cmd, void *da
 			return -EINVAL;
 	}
 
-	auto response = serialize(dnet_lookup_response{
-		wc.flags,
-		ehdr.flags,
-		filename,
+	dnet_lookup_response response;
+	response.record_flags = wc.flags;
+	response.user_flags = ehdr.flags;
+	response.path = filename;
+	response.json_timestamp = jhdr.timestamp;
+	response.json_offset = wc.data_offset;
+	response.json_size = jhdr.size;
+	response.json_capacity = jhdr.capacity;
+	response.json_checksum = {};
+	response.data_timestamp = ehdr.timestamp;
+	response.data_offset = wc.data_offset + jhdr.capacity;
+	response.data_size = wc.size ? (wc.size - jhdr.capacity) : 0;
+	response.data_checksum = {};
 
-		jhdr.timestamp,
-		wc.data_offset,
-		jhdr.size,
-		jhdr.capacity,
-		{},
+	auto response_packed = serialize(std::move(response));
 
-		ehdr.timestamp,
-		wc.data_offset + jhdr.capacity,
-		wc.size ? (wc.size - jhdr.capacity) : 0,
-		{},
-	});
-
-	err = dnet_send_reply(state, cmd, response.data(), response.size(), 0, context);
+	err = dnet_send_reply(state, cmd, response_packed.data(), response_packed.size(), 0, context);
 	if (err) {
 		DNET_LOG_ERROR(c->blog, "{}: EBLOB: blob-write-new: dnet_send_reply: data: {:p}, size: {}: {} [{}]",
-		               dnet_dump_id(&cmd->id), (void *)response.data(), response.size(), strerror(-err), err);
+		               dnet_dump_id(&cmd->id), (void *)response_packed.data(), response_packed.size(),
+		               strerror(-err), err);
 		return err;
 	}
 
@@ -1360,29 +1360,26 @@ protected:
 	}
 
 	void send_response(int status) {
-		auto response = serialize(ioremap::elliptics::dnet_iterator_response{
-			iterator_id_, // iterator_id
-			info_->key, // key
-			status, // status
+		ioremap::elliptics::dnet_iterator_response response;
+		response.iterator_id = iterator_id_;
+		response.key = info_->key;
+		response.status = status;
+		response.iterated_keys = ++counter_;
+		response.total_keys = request_.keys.size();
+		response.record_flags = info_->record_flags;
+		response.user_flags = info_->ehdr.flags;
+		response.json_timestamp = info_->jhdr.timestamp;
+		response.json_size = info_->jhdr.size;
+		response.json_capacity = info_->jhdr.capacity;
+		response.read_json_size = 0;
+		response.data_timestamp = info_->ehdr.timestamp;
+		response.data_size = info_->data_size;
+		response.read_data_size = 0;
+		response.data_offset = info_->data_offset;
+		response.blob_id = static_cast<uint64_t>(info_->fd);
 
-			++counter_, // iterated_keys
-			request_.keys.size(), // total_keys
-
-			info_->record_flags, // record_flags
-			info_->ehdr.flags, // user_flags
-
-			info_->jhdr.timestamp, // json_timestamp
-			info_->jhdr.size, // json_size
-			info_->jhdr.capacity, // json_capacity
-			0, // read_json_size
-
-			info_->ehdr.timestamp, // data timestamp
-			info_->data_size, // data_size
-			0, // read_data_size
-			info_->data_offset, // data_offset
-			static_cast<uint64_t>(info_->fd) // blob_id
-		});
-		dnet_send_reply(st_, cmd_, response.data(), response.size(), 1, /*context*/ nullptr);
+		auto response_packed = serialize(std::move(response));
+		dnet_send_reply(st_, cmd_, response_packed.data(), response_packed.size(), 1, /*context*/ nullptr);
 	}
 
 	uint64_t remaining_size() const {
@@ -1647,28 +1644,25 @@ static iterator_callback make_iterator_network_callback(eblob_backend_config *c,
 
 		const uint64_t read_data_size = (request.flags & DNET_IFLAGS_DATA) ? info->data_size : 0;
 
-		auto header = serialize(ioremap::elliptics::dnet_iterator_response{
-			it->id, // iterator_id
-			info->key, // key
-			0, // status
+		ioremap::elliptics::dnet_iterator_response response;
+		response.iterator_id = it->id;
+		response.key = info->key;
+		response.status = 0;
+		response.iterated_keys = ++(*counter);
+		response.total_keys = total_keys;
+		response.record_flags = info->record_flags;
+		response.user_flags = info->ehdr.flags;
+		response.json_timestamp = info->jhdr.timestamp;
+		response.json_size = info->jhdr.size;
+		response.json_capacity = info->jhdr.capacity;
+		response.read_json_size = json.size();
+		response.data_timestamp = info->ehdr.timestamp;
+		response.data_size = info->data_size;
+		response.read_data_size = read_data_size;
+		response.data_offset = info->data_offset;
+		response.blob_id = static_cast<uint64_t>(info->fd);
 
-			++(*counter), // iterated_keys
-			total_keys, // total_keys
-
-			info->record_flags, // record_flags
-			info->ehdr.flags, // user_flags
-
-			info->jhdr.timestamp, // json_timestamp
-			info->jhdr.size, // json_size
-			info->jhdr.capacity, // json_capacity
-			json.size(), // read_json_size
-
-			info->ehdr.timestamp, // data timestamp
-			info->data_size, // data_size
-			read_data_size, // read_data_size
-			info->data_offset, // data_offset
-			static_cast<uint64_t>(info->fd) // blob_id
-		});
+		auto header = serialize(std::move(response));
 
 		if (st->__need_exit) {
 			DNET_LOG_ERROR(c->blog,
@@ -1676,19 +1670,20 @@ static iterator_callback make_iterator_network_callback(eblob_backend_config *c,
 			return -EINTR;
 		}
 
-		auto response = data_pointer::allocate(sizeof(*cmd) + header.size() + json.size());
+		auto response_packed = data_pointer::allocate(sizeof(*cmd) + header.size() + json.size());
 
-		memcpy(response.data(), cmd, sizeof(*cmd));
-		memcpy(response.skip<dnet_cmd>().data(), header.data(), header.size());
+		memcpy(response_packed.data(), cmd, sizeof(*cmd));
+		memcpy(response_packed.skip<dnet_cmd>().data(), header.data(), header.size());
 		if (!json.empty()) {
-			memcpy(response.skip(sizeof(*cmd) + header.size()).data(), json.data(), json.size());
+			memcpy(response_packed.skip(sizeof(*cmd) + header.size()).data(), json.data(), json.size());
 		}
 
-		response.data<dnet_cmd>()->size = header.size() + json.size() + read_data_size;
-		response.data<dnet_cmd>()->flags |= DNET_FLAGS_REPLY | DNET_FLAGS_MORE;
-		response.data<dnet_cmd>()->flags &= ~DNET_FLAGS_NEED_ACK;
+		response_packed.data<dnet_cmd>()->size = header.size() + json.size() + read_data_size;
+		response_packed.data<dnet_cmd>()->flags |= DNET_FLAGS_REPLY | DNET_FLAGS_MORE;
+		response_packed.data<dnet_cmd>()->flags &= ~DNET_FLAGS_NEED_ACK;
 
-		return dnet_send_fd_threshold(st, response.data(), response.size(), info->fd, info->data_offset, read_data_size);
+		return dnet_send_fd_threshold(st, response_packed.data(), response_packed.size(),
+			                      info->fd, info->data_offset, read_data_size);
 	};
 }
 
@@ -1962,28 +1957,23 @@ int blob_send_new(struct eblob_backend_config *c,
 	int err = 0;
 
 	std::atomic<uint64_t> counter(0);
-	ioremap::elliptics::dnet_iterator_response response{
-		uint64_t(cmd->backend_id), // iterator_id
-		dnet_raw_id{{0}}, // key
-		0, // status
-
-		0, // iterated_keys
-		request.keys.size(), // total_keys
-
-		0, // record_flags
-		0, // user_flags
-
-		dnet_time{0, 0}, // json_timestamp
-		0, // json_size
-		0, // json_capacity
-		0, // read_json_size
-
-		dnet_time{0, 0}, // data_timestamp
-		0, // data_size
-		0, // read_data_size
-		0, // data_offset
-		0 // blob_id
-	};
+	ioremap::elliptics::dnet_iterator_response response;
+	response.iterator_id = uint64_t(cmd->backend_id);
+	response.key = dnet_raw_id{{0}};
+	response.status = 0;
+	response.iterated_keys = 0;
+	response.total_keys = request.keys.size();
+	response.record_flags = 0;
+	response.user_flags = 0;
+	response.json_timestamp = dnet_time{0, 0};
+	response.json_size = 0;
+	response.json_capacity = 0;
+	response.read_json_size = 0;
+	response.data_timestamp = dnet_time{0, 0};
+	response.data_size = 0;
+	response.read_data_size = 0;
+	response.data_offset = 0;
+	response.blob_id = 0;
 
 	auto send_fail_reply = [&] (int status) {
 		response.status = status;
@@ -2266,7 +2256,9 @@ int blob_bulk_remove_new(struct eblob_backend_config *config,
 		{
 			dnet_oplock_guard oplock_guard{pool, &cmd_copy.id};
 			if (bulk_request.ioflags & DNET_IO_FLAGS_CAS_TIMESTAMP) {
-				dnet_remove_request single_request{bulk_request.ioflags, bulk_request.timestamps[i]};
+				dnet_remove_request single_request;
+				single_request.ioflags = bulk_request.ioflags;
+				single_request.timestamp = bulk_request.timestamps[i];
 				err = blob_del_new_cas(config, b, &cmd_copy, key, single_request);
 			}
 			if (!err) {

@@ -1,8 +1,27 @@
+#include "protocol.h"
 #include "protocol.hpp"
 
 #include "rapidjson/document.h"
 
 namespace ioremap { namespace elliptics {
+
+data_place::place_type data_place::where() const {
+	return in_file.fd >= 0 ? IN_FILE : IN_MEMORY;
+}
+
+data_place data_place::from_file(const data_in_file &in_file) {
+	return {
+		.in_file = in_file,
+		.in_memory = {},
+	};
+}
+
+data_place data_place::from_memory(const data_pointer &in_memory) {
+	return {
+		.in_file = {},
+		.in_memory = in_memory,
+	};
+}
 
 dnet_iterator_request::dnet_iterator_request()
 	: iterator_id{0}
@@ -59,3 +78,15 @@ void validate_json(const std::string &json) {
 }
 
 }} // namespace ioremap::elliptics
+
+extern "C" {
+
+void common_request_free(struct common_request *common_req) {
+	delete common_req;
+}
+
+struct dnet_cmd *access_cmd(struct common_request *common_req) {
+	return &common_req->cmd;
+}
+
+}
