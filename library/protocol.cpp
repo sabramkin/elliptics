@@ -4,6 +4,24 @@
 
 namespace ioremap { namespace elliptics {
 
+data_place::place_type data_place::where() const {
+	return in_file.fd >= 0 ? IN_FILE : IN_MEMORY;
+}
+
+data_place data_place::from_file(const data_in_file &in_file) {
+	return {
+		.in_file = in_file,
+		.in_memory = {},
+	};
+}
+
+data_place data_place::from_memory(const data_pointer &in_memory) {
+	return {
+		.in_file = {},
+		.in_memory = in_memory,
+	};
+}
+
 dnet_iterator_request::dnet_iterator_request()
 	: iterator_id{0}
 	, action{DNET_ITERATOR_ACTION_START}

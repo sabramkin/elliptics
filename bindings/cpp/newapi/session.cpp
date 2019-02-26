@@ -1107,20 +1107,20 @@ public:
 			const auto &remote = pair.first;
 			const auto &ids = pair.second;
 
-			auto request = serialize(dnet_server_send_request{
-				ids,
-				dst_groups,
-				flags,
-				chunk_size,
-				chunk_write_timeout,
-				chunk_commit_timeout,
-				chunk_retry_count,
-			});
+			dnet_server_send_request request;
+			request.keys = ids;
+			request.groups = dst_groups;
+			request.flags = flags;
+			request.chunk_size = chunk_size;
+			request.chunk_write_timeout = chunk_write_timeout;
+			request.chunk_commit_timeout = chunk_commit_timeout;
+			request.chunk_retry_count = chunk_retry_count;
+			auto request_packed = serialize(std::move(request));
 
 			transport_control control;
 			control.set_command(DNET_CMD_SEND_NEW);
 			control.set_cflags(DNET_FLAGS_NEED_ACK | DNET_FLAGS_NOLOCK);
-			control.set_data(request.data(), request.size());
+			control.set_data(request_packed.data(), request_packed.size());
 
 			session session = m_session.clean_clone();
 			session.set_direct_id(remote.address, remote.backend_id);
@@ -1461,13 +1461,13 @@ public:
 			const auto &address = pair.first;
 			auto &ids = pair.second;
 
-			const dnet_bulk_read_request request{
-				std::move(ids),
-				m_session.get_ioflags(),
-				read_flags,
-				deadline
-			};
-			const auto packet = serialize(request);
+			dnet_bulk_read_request request;
+			request.keys = std::move(ids);
+			request.ioflags = m_session.get_ioflags();
+			request.read_flags = read_flags;
+			request.deadline = deadline;
+
+			const auto packet = serialize(std::move(request));
 
 			transport_control control;
 			control.set_command(DNET_CMD_BULK_READ_NEW);
