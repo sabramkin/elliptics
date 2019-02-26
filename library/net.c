@@ -331,12 +331,19 @@ err_out_exit:
 
 void dnet_io_req_free(struct dnet_io_req *r)
 {
+	common_request_free(r->common_req);
+
+	//
+	// TODO: move to dnet_req_body_free
 	if (r->fd >= 0 && r->fsize) {
 		if (r->on_exit & DNET_IO_REQ_FLAGS_CACHE_FORGET)
 			posix_fadvise(r->fd, r->local_offset, r->fsize, POSIX_FADV_DONTNEED);
 		if (r->on_exit & DNET_IO_REQ_FLAGS_CLOSE)
 			close(r->fd);
 	}
+	// !TODO
+	//
+
 	dnet_access_access_put(r->context);
 	free(r);
 }
