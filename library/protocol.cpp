@@ -77,3 +77,11 @@ void validate_json(const std::string &json) {
 }
 
 }} // namespace ioremap::elliptics
+
+extern "C" {
+
+void common_request_free(struct common_request *common_req) {
+	delete common_req;
+}
+
+}

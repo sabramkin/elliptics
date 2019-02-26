@@ -58,22 +58,25 @@ struct dnet_group;
 struct dnet_net_state;
 struct dnet_cmd_stats;
 struct dnet_access_context;
+struct common_request;
 
 struct dnet_io_req {
 	struct list_head	req_entry;
 
 	struct dnet_net_state	*st;
+	struct common_request   *common_req;
 
-	void			*header;
-	size_t			hsize;
+	// TODO: remove deprecated fields after refactoring complete
+	/*Deprecated*/ void	*header;
+	/*Deprecated*/ size_t	hsize;
 
-	void			*data;
-	size_t			dsize;
+	/*Deprecated*/ void	*data;
+	/*Deprecated*/ size_t	dsize;
 
-	int			on_exit;
-	int			fd;
-	off_t			local_offset;
-	size_t			fsize;
+	/*Deprecated*/ int	on_exit;
+	/*Deprecated*/ int	fd;
+	/*Deprecated*/ off_t	local_offset;
+	/*Deprecated*/ size_t	fsize;
 
 	struct timespec		queue_start_ts;
 	uint64_t		queue_time;
@@ -443,6 +446,7 @@ void dnet_io_stop(struct dnet_node *n);
 void dnet_io_cleanup(struct dnet_node *n);
 
 void dnet_io_req_free(struct dnet_io_req *r);
+void common_request_free(struct common_request *common_req);
 
 struct dnet_config_data {
 	int cfg_addr_num;
