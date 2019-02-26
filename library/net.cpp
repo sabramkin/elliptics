@@ -42,8 +42,9 @@
 #include "elliptics/packet.h"
 #include "elliptics/interface.h"
 #include "common.hpp"
-#include "protocol.hpp"
 #include "logger.hpp"
+#include "msgpack_conv.hpp"
+#include "protocol.hpp"
 
 
 enum dnet_socket_state {

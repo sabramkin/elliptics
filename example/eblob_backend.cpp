@@ -31,12 +31,13 @@
 #include "elliptics/backends.h"
 #include "elliptics/newapi/session.hpp"
 
-#include "library/protocol.hpp"
-#include "library/elliptics.h"
-#include "library/backend.h"
-#include "library/request_queue.h"
-#include "library/logger.hpp"
 #include "library/access_context.h"
+#include "library/backend.h"
+#include "library/elliptics.h"
+#include "library/logger.hpp"
+#include "library/msgpack_conv.hpp"
+#include "library/protocol.hpp"
+#include "library/request_queue.h"
 
 #include "monitor/measure_points.h"
 

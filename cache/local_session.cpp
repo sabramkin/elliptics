@@ -23,6 +23,7 @@
 
 #include "library/backend.h"
 #include "library/logger.hpp"
+#include "library/msgpack_conv.hpp"
 #include "library/protocol.hpp"
 
 using namespace ioremap::elliptics;

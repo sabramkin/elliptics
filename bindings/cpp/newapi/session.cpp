@@ -14,6 +14,7 @@
 #include "library/access_context.h"
 #include "library/common.hpp"
 #include "library/elliptics.h"
+#include "library/msgpack_conv.hpp"
 #include "library/protocol.hpp"
 
 #include "bindings/cpp/functional_p.h"

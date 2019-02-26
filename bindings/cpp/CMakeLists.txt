@@ -22,6 +22,7 @@ set(ELLIPTICS_CLIENT_SRCS
     newapi/result_entry.cpp
     newapi/bulk_remove_handler.cpp
     ../../library/protocol.cpp
+    ../../library/msgpack_conv.cpp
     ../../library/compat.c
     ../../library/crypto.c
     ../../library/crypto/sha512.c

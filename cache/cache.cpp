@@ -23,6 +23,7 @@
 
 #include "library/access_context.h"
 #include "library/backend.h"
+#include "library/msgpack_conv.hpp"
 #include "library/protocol.hpp"
 
 #include "monitor/measure_points.h"
