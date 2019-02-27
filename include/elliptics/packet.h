@@ -288,8 +288,8 @@ struct dnet_cmd
 	uint64_t		trace_id;
 	uint64_t		flags;
 	uint64_t		trans;
-	uint64_t		size;
-	uint8_t			data[0];
+	uint64_t		serialized_size;
+	uint8_t			serialized_data[0];
 } __attribute__ ((packed));
 
 static inline void dnet_convert_id(struct dnet_id *id)
