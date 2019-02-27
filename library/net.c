@@ -36,6 +36,7 @@
 #include "elliptics.h"
 #include "elliptics/packet.h"
 #include "elliptics/interface.h"
+#include "protocol.h"
 
 #include "monitor/measure_points.h"
 #include "library/logger.hpp"

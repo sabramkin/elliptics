@@ -446,7 +446,6 @@ void dnet_io_stop(struct dnet_node *n);
 void dnet_io_cleanup(struct dnet_node *n);
 
 void dnet_io_req_free(struct dnet_io_req *r);
-void common_request_free(struct common_request *common_req);
 
 struct dnet_config_data {
 	int cfg_addr_num;

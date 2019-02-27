@@ -1,3 +1,4 @@
+#include "protocol.h"
 #include "protocol.hpp"
 
 #include "rapidjson/document.h"
@@ -82,6 +83,10 @@ extern "C" {
 
 void common_request_free(struct common_request *common_req) {
 	delete common_req;
+}
+
+struct dnet_cmd* access_cmd(struct common_request *common_req) {
+	return &common_req->cmd;
 }
 
 }
