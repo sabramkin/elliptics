@@ -218,16 +218,14 @@ void dnet_backend_command_stats_update(struct dnet_backend *backend,
 // handle command by @backend
 int dnet_backend_process_cmd_raw(struct dnet_backend *backend,
                                  struct dnet_net_state *st,
-                                 struct dnet_cmd *cmd,
-                                 void *data,
+                                 struct common_request *common_req,
                                  struct dnet_cmd_stats *cmd_stats,
                                  struct dnet_access_context *context);
 
 // handle command by @backend's cache
 int dnet_cmd_cache_io(struct dnet_backend *backend,
                       struct dnet_net_state *st,
-                      struct dnet_cmd *cmd,
-                      char *data,
+                      struct common_request *common_req,
                       struct dnet_cmd_stats *cmd_stats,
                       struct dnet_access_context *context);
 

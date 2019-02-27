@@ -256,13 +256,13 @@ struct dnet_io_local
 };
 
 struct dnet_access_context;
+struct common_request;
 
 struct dnet_backend_callbacks {
 	/* command handler processes DNET_CMD_* commands */
 	int			(* command_handler)(void *state,
 	                                            void *priv,
-	                                            struct dnet_cmd *cmd,
-	                                            void *data,
+	                                            struct common_request *cmd,
 	                                            void *cmd_stats,
 	                                            struct dnet_access_context *context);
 
@@ -894,6 +894,10 @@ int dnet_send_file_info_ts_without_fd(void *state, struct dnet_cmd *cmd, const v
  * It will fill transaction, command and ID from the original command and copy given data.
  * It will set DNET_FLAGS_MORE if original command requested acknowledge or @more is set.
  */
+int dnet_send_response(void *state,
+                    struct common_request *common_req,
+                    struct dnet_access_context *context);
+
 int dnet_send_reply(void *state,
                     struct dnet_cmd *cmd,
                     const void *odata,

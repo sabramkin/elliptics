@@ -348,6 +348,30 @@ void dnet_io_req_free(struct dnet_io_req *r)
 	free(r);
 }
 
+int dnet_send_response(void *state,
+                       struct common_request *common_req,
+                       struct dnet_access_context *context __attribute__((unused))) {
+	struct dnet_net_state *st = state;
+	struct dnet_cmd *cmd = access_cmd(common_req);
+
+	// TODO(sabramkin): there was copying of request, I temporarily removed it.
+	// TODO(sabramkin): research the subject and then provide new owning scheme.
+
+	cmd->flags |= DNET_FLAGS_REPLY;
+	cmd->flags &= ~DNET_FLAGS_NEED_ACK; // this is a reply, it may not contain ACK bit
+
+	dnet_log(st->n, DNET_LOG_NOTICE, "%s: %s: reply trans: %lld -> %s (%p): cflags: %s",
+	         dnet_dump_id(&cmd->id), dnet_cmd_string(cmd->cmd), (unsigned long long)cmd->trans,
+	         dnet_state_dump_addr(st), st,
+	         dnet_flags_dump_cflags(cmd->flags));
+
+	struct dnet_io_req r;
+	memset(&r, 0, sizeof(r));
+	r.common_req = common_req;
+
+	return dnet_io_req_queue(st, &r);
+}
+
 ssize_t dnet_send_nolock(struct dnet_net_state *st, void *data, uint64_t size)
 {
 	ssize_t err = 0;
@@ -741,7 +765,7 @@ int dnet_process_recv(struct dnet_net_state *st, struct dnet_io_req *r) {
 
 		dnet_access_context_add_string(context, "access", "server");
 		HANDY_COUNTER_INCREMENT("io.cmds", 1);
-		err = dnet_process_cmd_raw(st, cmd, r->data, 0, r->queue_time, context);
+		err = dnet_process_cmd_raw(st, r->common_req, 0, r->queue_time, context);
 	} else {
 		dnet_access_context_add_string(context, "access", "server/forward");
 		dnet_access_context_add_string(context, "forward", dnet_state_dump_addr(forward_state));

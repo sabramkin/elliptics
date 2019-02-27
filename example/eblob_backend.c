@@ -1211,10 +1211,10 @@ err_out_exit:
 
 static int eblob_backend_command_handler(void *state,
                                          void *priv,
-                                         struct dnet_cmd *cmd,
-                                         void *data,
+                                         struct common_request *common_req,
                                          void *cmd_stats,
                                          struct dnet_access_context *context) {
+	struct dnet_cmd *cmd = access_cmd(common_req);
 	FORMATTED(HANDY_TIMER_SCOPE, ("eblob_backend.cmd.%s", dnet_cmd_string(cmd->cmd)));
 
 	int err;
@@ -1222,49 +1222,51 @@ static int eblob_backend_command_handler(void *state,
 
 	// TODO(shaitan): pass @cmd_stats to all blob_* functions and update statistics by them
 	switch (cmd->cmd) {
-		case DNET_CMD_LOOKUP:
-			err = blob_file_info(c, state, cmd);
-			break;
-		case DNET_CMD_WRITE:
-			err = blob_write(c, state, cmd, data);
-			break;
-		case DNET_CMD_READ:
-			err = blob_read(c, state, cmd, data, 1);
-			break;
-		case DNET_CMD_READ_RANGE:
-		case DNET_CMD_DEL_RANGE:
-			err = blob_read_range(c, state, cmd, data);
-			break;
-		case DNET_CMD_DEL:
-			err = blob_del(c, cmd);
-			break;
-		case DNET_CMD_SEND:
-			err = blob_send(c, state, cmd, data);
-			break;
-		case DNET_CMD_LOOKUP_NEW:
-			err = blob_file_info_new(c, state, cmd, context);
-			break;
+		// TODO(sabramkin): uncomment and repair
+		//case DNET_CMD_LOOKUP:
+		//	err = blob_file_info(c, state, cmd);
+		//	break;
+		//case DNET_CMD_WRITE:
+		//	err = blob_write(c, state, cmd, data);
+		//	break;
+		//case DNET_CMD_READ:
+		//	err = blob_read(c, state, cmd, data, 1);
+		//	break;
+		//case DNET_CMD_READ_RANGE:
+		//case DNET_CMD_DEL_RANGE:
+		//	err = blob_read_range(c, state, cmd, data);
+		//	break;
+		//case DNET_CMD_DEL:
+		//	err = blob_del(c, cmd);
+		//	break;
+		//case DNET_CMD_SEND:
+		//	err = blob_send(c, state, cmd, data);
+		//	break;
+		//case DNET_CMD_LOOKUP_NEW:
+		//	err = blob_file_info_new(c, state, cmd, context);
+		//	break;
 		case DNET_CMD_READ_NEW:
-			err = blob_read_new(c, state, cmd, data, cmd_stats, context);
+			err = blob_read_new(c, state, common_req, cmd_stats, context);
 			break;
 		case DNET_CMD_WRITE_NEW:
-			err = blob_write_new(c, state, cmd, data, cmd_stats, context);
+			err = blob_write_new(c, state, common_req, cmd_stats, context);
 			break;
-		case DNET_CMD_ITERATOR_NEW:
-			err = blob_iterate(c, state, cmd, data, context);
-			break;
-		case DNET_CMD_SEND_NEW:
-			err = blob_send_new(c, state, cmd, data, context);
-			break;
-		case DNET_CMD_DEL_NEW:
-			err = blob_del_new(c, cmd, data, context);
-			break;
-		case DNET_CMD_BULK_READ_NEW:
-			err = blob_bulk_read_new(c, state, cmd, data, cmd_stats, context);
-			break;
-		case DNET_CMD_BULK_REMOVE_NEW:
-			err = blob_bulk_remove_new(c, state, cmd, data, context);
-			break;
+		// TODO(sabramkin): uncomment and repair
+		//case DNET_CMD_ITERATOR_NEW:
+		//	err = blob_iterate(c, state, cmd, data, context);
+		//	break;
+		//case DNET_CMD_SEND_NEW:
+		//	err = blob_send_new(c, state, cmd, data, context);
+		//	break;
+		//case DNET_CMD_DEL_NEW:
+		//	err = blob_del_new(c, cmd, data, context);
+		//	break;
+		//case DNET_CMD_BULK_READ_NEW:
+		//	err = blob_bulk_read_new(c, state, cmd, data, cmd_stats, context);
+		//	break;
+		//case DNET_CMD_BULK_REMOVE_NEW:
+		//	err = blob_bulk_remove_new(c, state, cmd, data, context);
+		//	break;
 		default:
 			err = -ENOTSUP;
 			break;

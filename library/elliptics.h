@@ -650,8 +650,7 @@ static inline void dnet_counter_set(struct dnet_node *n, int counter, int err, i
 struct dnet_trans;
 struct dnet_access_context;
 int __attribute__((weak)) dnet_process_cmd_raw(struct dnet_net_state *st,
-                                               struct dnet_cmd *cmd,
-                                               void *data,
+                                               struct common_request *common_req,
                                                int recursive,
                                                long queue_time,
                                                struct dnet_access_context *context);

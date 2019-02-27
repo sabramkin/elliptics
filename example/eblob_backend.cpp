@@ -698,17 +698,13 @@ static int blob_read_new_impl(eblob_backend_config *c,
 
 int blob_read_new(eblob_backend_config *c,
                   void *state,
-                  dnet_cmd *cmd,
-                  void *data,
+                  common_request *common_req,
                   dnet_cmd_stats *cmd_stats,
                   dnet_access_context *context) {
 	using namespace ioremap::elliptics;
 
-	const auto request = [&data, &cmd] () {
-		dnet_read_request request;
-		deserialize(data_pointer::from_raw(data, cmd->size), request);
-		return request;
-	} ();
+	auto &request = *static_cast<dnet_read_request*>(common_req);
+	auto cmd = &request.cmd;
 
 	if (context) {
 		context->add({{"id", std::string(dnet_dump_id(&cmd->id))},
@@ -726,20 +722,14 @@ int blob_read_new(eblob_backend_config *c,
 	return blob_read_new_impl(c, state, cmd, cmd_stats, request, true, context);
 }
 
-int blob_write_new(eblob_backend_config *c, void *state, dnet_cmd *cmd, void *data,
+int blob_write_new(eblob_backend_config *c, void *state, common_request *common_req,
                    dnet_cmd_stats *cmd_stats, struct dnet_access_context *context) {
 	using namespace ioremap::elliptics;
 
-	struct eblob_backend *b = c->eblob;
-	auto data_p = data_pointer::from_raw(data, cmd->size);
+	auto &request = *static_cast<dnet_write_request*>(common_req);
+	auto cmd = &request.cmd;
 
-	auto request = [&data_p] () {
-		size_t offset = 0;
-		dnet_write_request request;
-		deserialize(data_p, request, offset);
-		data_p = data_p.skip(offset);
-		return request;
-	} ();
+	struct eblob_backend *b = c->eblob;
 
 	if (context) {
 		context->add({{"id", std::string(dnet_dump_id(&cmd->id))},
@@ -918,12 +908,12 @@ int blob_write_new(eblob_backend_config *c, void *state, dnet_cmd *cmd, void *da
 			return err;
 		}
 		const auto offset = sizeof(ehdr) + ehdr.size;
-		iov.emplace_back(eblob_iovec{data_p.data(), request.json_size, offset});
+		iov.emplace_back(eblob_iovec{request.json.data(), request.json_size, offset});
 	}
 
 	if (request.data_size) {
 		const auto offset = sizeof(ehdr) + ehdr.size + jhdr.capacity + request.data_offset;
-		iov.emplace_back(eblob_iovec{data_p.skip(request.json_size).data(), request.data_size, offset});
+		iov.emplace_back(eblob_iovec{request.data.data(), request.data_size, offset});
 	}
 
 	if (request.ioflags & DNET_IO_FLAGS_PLAIN_WRITE) {

@@ -32,13 +32,14 @@
 #include <errno.h>
 #include <string.h>
 
-#include "elliptics.h"
 #include "backend.h"
+#include "elliptics.h"
+#include "protocol.h"
 #include "request_queue.h"
 #include "route.h"
-#include "monitor/monitor.h"
 
 #include "monitor/measure_points.h"
+#include "monitor/monitor.h"
 
 #include "logger.hpp"
 #include "access_context.h"
@@ -1271,63 +1272,64 @@ err_out_exit:
 	return err;
 }
 
-static int dnet_cmd_bulk_read(struct dnet_backend *backend,
-                              struct dnet_net_state *st,
-                              struct dnet_cmd *cmd,
-                              void *data,
-                              struct dnet_cmd_stats *cmd_stats)
-{
-	int err = -1, ret;
-	struct dnet_io_attr *io = data;
-	struct dnet_io_attr *ios = io + 1;
-	uint64_t count = 0;
-	uint64_t i;
-	int use_oplock;
-	struct dnet_io_pool *pool = NULL;
-	struct dnet_id lock_id = { .group_id = cmd->id.group_id };
-
-	struct dnet_cmd read_cmd = *cmd;
-	read_cmd.size = sizeof(struct dnet_io_attr);
-	read_cmd.cmd = DNET_CMD_READ;
-	read_cmd.flags |= DNET_FLAGS_MORE;
-	read_cmd.backend_id = dnet_backend_get_backend_id(backend);
-
-	pool = dnet_backend_get_pool(st->n, read_cmd.backend_id);
-
-	dnet_convert_io_attr(io);
-	count = io->size / sizeof(struct dnet_io_attr);
-
-	dnet_log(st->n, DNET_LOG_NOTICE, "%s: starting BULK_READ for %d commands",
-		dnet_dump_id(&cmd->id), (int) count);
-
-	for (i = 0; i < count; i++) {
-		/*
-		 * First key is already locked by request_queue::take_request().
-		 * Check that i-th key is not equal to the first key.
-		 */
-		use_oplock = (i > 0) && !(cmd->flags & DNET_FLAGS_NOLOCK) &&
-					!dnet_id_cmp_str((const unsigned char *)&ios[i].id, (const unsigned char *)&cmd->id.id);
-		if (use_oplock) {
-			memcpy(&lock_id.id, &ios[i].id, DNET_ID_SIZE);
-			dnet_oplock(pool, &lock_id);
-		}
-
-		ret = dnet_process_cmd_raw(st, &read_cmd, &ios[i], 1, cmd_stats->queue_time, /*context*/ NULL);
-		dnet_log(st->n, DNET_LOG_NOTICE, "%s: processing BULK_READ.READ for %d/%d command, err: %d",
-			dnet_dump_id(&cmd->id), (int) i, (int) count, ret);
-
-		if (use_oplock) {
-			dnet_opunlock(pool, &lock_id);
-		}
-
-		if (!ret)
-			err = 0;
-		else if (err == -1)
-			err = ret;
-	}
-
-	return err;
-}
+// TODO(sabramkin): uncomment and repair
+//static int dnet_cmd_bulk_read(struct dnet_backend *backend,
+//                              struct dnet_net_state *st,
+//                              struct dnet_cmd *cmd,
+//                              void *data,
+//                              struct dnet_cmd_stats *cmd_stats)
+//{
+//	int err = -1, ret;
+//	struct dnet_io_attr *io = data;
+//	struct dnet_io_attr *ios = io + 1;
+//	uint64_t count = 0;
+//	uint64_t i;
+//	int use_oplock;
+//	struct dnet_io_pool *pool = NULL;
+//	struct dnet_id lock_id = { .group_id = cmd->id.group_id };
+//
+//	struct dnet_cmd read_cmd = *cmd;
+//	read_cmd.size = sizeof(struct dnet_io_attr);
+//	read_cmd.cmd = DNET_CMD_READ;
+//	read_cmd.flags |= DNET_FLAGS_MORE;
+//	read_cmd.backend_id = dnet_backend_get_backend_id(backend);
+//
+//	pool = dnet_backend_get_pool(st->n, read_cmd.backend_id);
+//
+//	dnet_convert_io_attr(io);
+//	count = io->size / sizeof(struct dnet_io_attr);
+//
+//	dnet_log(st->n, DNET_LOG_NOTICE, "%s: starting BULK_READ for %d commands",
+//		dnet_dump_id(&cmd->id), (int) count);
+//
+//	for (i = 0; i < count; i++) {
+//		/*
+//		 * First key is already locked by request_queue::take_request().
+//		 * Check that i-th key is not equal to the first key.
+//		 */
+//		use_oplock = (i > 0) && !(cmd->flags & DNET_FLAGS_NOLOCK) &&
+//					!dnet_id_cmp_str((const unsigned char *)&ios[i].id, (const unsigned char *)&cmd->id.id);
+//		if (use_oplock) {
+//			memcpy(&lock_id.id, &ios[i].id, DNET_ID_SIZE);
+//			dnet_oplock(pool, &lock_id);
+//		}
+//
+//		ret = dnet_process_cmd_raw(st, &read_cmd, &ios[i], 1, cmd_stats->queue_time, /*context*/ NULL);
+//		dnet_log(st->n, DNET_LOG_NOTICE, "%s: processing BULK_READ.READ for %d/%d command, err: %d",
+//			dnet_dump_id(&cmd->id), (int) i, (int) count, ret);
+//
+//		if (use_oplock) {
+//			dnet_opunlock(pool, &lock_id);
+//		}
+//
+//		if (!ret)
+//			err = 0;
+//		else if (err == -1)
+//			err = ret;
+//	}
+//
+//	return err;
+//}
 
 static int dnet_cas_local(struct dnet_backend *backend,
                           struct dnet_node *n,
@@ -1453,7 +1455,7 @@ static int dnet_cmd_notify(struct dnet_net_state *st, struct dnet_cmd *cmd) {
 static int dnet_process_cmd_without_backend_raw(struct dnet_net_state *st,
                                                 struct dnet_cmd *cmd,
                                                 void *data,
-                                                struct dnet_cmd_stats *cmd_stats,
+                                                struct dnet_cmd_stats *cmd_stats __attribute__((unused)),
                                                 struct dnet_access_context *context) {
 	switch (cmd->cmd) {
 	case DNET_CMD_AUTH:
@@ -1483,44 +1485,44 @@ static int dnet_process_cmd_without_backend_raw(struct dnet_net_state *st,
 	}
 }
 
-static int dnet_cmd_send(struct dnet_backend *backend,
-                         struct dnet_net_state *st,
-                         struct dnet_cmd *cmd,
-                         void *data,
-                         struct dnet_cmd_stats *cmd_stats) {
-	struct dnet_server_send_request *req = data;
-	dnet_convert_server_send_request(req);
-
-	if (req->id_num == 0) {
-		dnet_log(st->n, DNET_LOG_ERROR, "%s: invalid send command: id_num must be non zero",
-		         dnet_dump_id(&cmd->id));
-		return -EINVAL;
-	}
-
-	if (req->group_num == 0) {
-		dnet_log(st->n, DNET_LOG_ERROR, "%s: invalid send command: group_num must be non zero",
-		         dnet_dump_id(&cmd->id));
-		return -EINVAL;
-	}
-
-	size_t req_size = sizeof(struct dnet_server_send_request) +
-				req->id_num * sizeof(struct dnet_raw_id) +
-				req->group_num * sizeof(int);
-
-	if (cmd->size != req_size) {
-		dnet_log(st->n, DNET_LOG_ERROR,
-		         "%s: invalid send command: size mismatch: cmd size: %llu, request size: %zd",
-		         dnet_dump_id(&cmd->id), (unsigned long long)cmd->size, req_size);
-		return -EINVAL;
-	}
-
-	dnet_convert_server_send_request(req);
-	return dnet_backend_process_cmd_raw(backend, st, cmd, data, cmd_stats, /*context*/ NULL);
-}
+// TODO(sabramkin): uncomment and repair
+//static int dnet_cmd_send(struct dnet_backend *backend,
+//                         struct dnet_net_state *st,
+//                         struct dnet_cmd *cmd,
+//                         void *data,
+//                         struct dnet_cmd_stats *cmd_stats) {
+//	struct dnet_server_send_request *req = data;
+//	dnet_convert_server_send_request(req);
+//
+//	if (req->id_num == 0) {
+//		dnet_log(st->n, DNET_LOG_ERROR, "%s: invalid send command: id_num must be non zero",
+//		         dnet_dump_id(&cmd->id));
+//		return -EINVAL;
+//	}
+//
+//	if (req->group_num == 0) {
+//		dnet_log(st->n, DNET_LOG_ERROR, "%s: invalid send command: group_num must be non zero",
+//		         dnet_dump_id(&cmd->id));
+//		return -EINVAL;
+//	}
+//
+//	size_t req_size = sizeof(struct dnet_server_send_request) +
+//				req->id_num * sizeof(struct dnet_raw_id) +
+//				req->group_num * sizeof(int);
+//
+//	if (cmd->size != req_size) {
+//		dnet_log(st->n, DNET_LOG_ERROR,
+//		         "%s: invalid send command: size mismatch: cmd size: %llu, request size: %zd",
+//		         dnet_dump_id(&cmd->id), (unsigned long long)cmd->size, req_size);
+//		return -EINVAL;
+//	}
+//
+//	dnet_convert_server_send_request(req);
+//	return dnet_backend_process_cmd_raw(backend, st, cmd, data, cmd_stats, /*context*/ NULL);
+//}
 
 static int dnet_process_cmd_with_backend_raw(struct dnet_net_state *st,
-                                             struct dnet_cmd *cmd,
-                                             void *data,
+                                             struct common_request *common_req,
                                              struct dnet_cmd_stats *cmd_stats,
                                              struct dnet_access_context *context) {
 	int err = 0;
@@ -1528,6 +1530,7 @@ static int dnet_process_cmd_with_backend_raw(struct dnet_net_state *st,
 	struct dnet_io_attr *io = NULL;
 	struct timespec start, end;
 	struct dnet_backend *backend = NULL;
+	struct dnet_cmd *cmd = access_cmd(common_req);
 
 	clock_gettime(CLOCK_MONOTONIC_RAW, &start);
 
@@ -1541,63 +1544,64 @@ static int dnet_process_cmd_with_backend_raw(struct dnet_net_state *st,
 
 	// TODO(shaitan): pass @cmd_stats to all handling functions to update statistics
 	switch (cmd->cmd) {
-	case DNET_CMD_ITERATOR:
-		err = dnet_cmd_iterator(backend, st, cmd, data);
-		break;
-	case DNET_CMD_SEND:
-		err = dnet_cmd_send(backend, st, cmd, data, cmd_stats);
-		break;
-	case DNET_CMD_BULK_READ:
-		err = dnet_backend_process_cmd_raw(backend, st, cmd, data, cmd_stats, context);
-		if (err == -ENOTSUP)
-			err = dnet_cmd_bulk_read(backend, st, cmd, data, cmd_stats);
-		break;
-	case DNET_CMD_READ:
-	case DNET_CMD_WRITE:
-	case DNET_CMD_DEL:
-		if ((n->ro || dnet_backend_read_only(backend)) &&
-		    ((cmd->cmd == DNET_CMD_DEL) || (cmd->cmd == DNET_CMD_WRITE))) {
-			err = -EROFS;
-			break;
-		}
-
-		io = NULL;
-		if (cmd->size < sizeof(struct dnet_io_attr)) {
-			dnet_log(st->n, DNET_LOG_ERROR, "%s: invalid size: cmd: %u, cmd.size: %llu",
-			         dnet_dump_id(&cmd->id), cmd->cmd, (unsigned long long)cmd->size);
-			err = -EINVAL;
-			break;
-		}
-		io = data;
-		dnet_convert_io_attr(io);
-
-		if (n->flags & DNET_CFG_NO_CSUM)
-			io->flags |= DNET_IO_FLAGS_NOCSUM;
-
-		if (!(io->flags & DNET_IO_FLAGS_NOCACHE)) {
-			err = dnet_cmd_cache_io(backend, st, cmd, data, cmd_stats, context);
-			if (err != -ENOTSUP)
-				break;
-		}
-
-		if (cmd->cmd == DNET_CMD_WRITE) {
-			if (io->flags & DNET_IO_FLAGS_CAS_TIMESTAMP) {
-				err = dnet_cas_timestamp_local(backend, n, io);
-				if (err != 0)
-					break;
-			}
-
-			if (io->flags & DNET_IO_FLAGS_COMPARE_AND_SWAP) {
-				err = dnet_cas_local(backend, n, &cmd->id, io->parent, DNET_ID_SIZE);
-				if (err != 0 && err != -ENOENT)
-					break;
-			}
-		}
-
-		if (io->flags & DNET_IO_FLAGS_CACHE_ONLY)
-			break;
-
-		dnet_convert_io_attr(io);
+	// TODO(sabramkin): uncomment and repair
+	//case DNET_CMD_ITERATOR:
+	//	err = dnet_cmd_iterator(backend, st, cmd, data);
+	//	break;
+	//case DNET_CMD_SEND:
+	//	err = dnet_cmd_send(backend, st, cmd, data, cmd_stats);
+	//	break;
+	//case DNET_CMD_BULK_READ:
+	//	err = dnet_backend_process_cmd_raw(backend, st, cmd, data, cmd_stats, context);
+	//	if (err == -ENOTSUP)
+	//		err = dnet_cmd_bulk_read(backend, st, cmd, data, cmd_stats);
+	//	break;
+	//case DNET_CMD_READ:
+	//case DNET_CMD_WRITE:
+	//case DNET_CMD_DEL:
+	//	if ((n->ro || dnet_backend_read_only(backend)) &&
+	//	    ((cmd->cmd == DNET_CMD_DEL) || (cmd->cmd == DNET_CMD_WRITE))) {
+	//		err = -EROFS;
+	//		break;
+	//	}
+	//
+	//	io = NULL;
+	//	if (cmd->size < sizeof(struct dnet_io_attr)) {
+	//		dnet_log(st->n, DNET_LOG_ERROR, "%s: invalid size: cmd: %u, cmd.size: %llu",
+	//			 dnet_dump_id(&cmd->id), cmd->cmd, (unsigned long long)cmd->size);
+	//		err = -EINVAL;
+	//		break;
+	//	}
+	//	io = data;
+	//	dnet_convert_io_attr(io);
+	//
+	//	if (n->flags & DNET_CFG_NO_CSUM)
+	//		io->flags |= DNET_IO_FLAGS_NOCSUM;
+	//
+	//	if (!(io->flags & DNET_IO_FLAGS_NOCACHE)) {
+	//		err = dnet_cmd_cache_io(backend, st, common_req, cmd_stats, context);
+	//		if (err != -ENOTSUP)
+	//			break;
+	//	}
+	//
+	//	if (cmd->cmd == DNET_CMD_WRITE) {
+	//		if (io->flags & DNET_IO_FLAGS_CAS_TIMESTAMP) {
+	//			err = dnet_cas_timestamp_local(backend, n, io);
+	//			if (err != 0)
+	//				break;
+	//		}
+	//
+	//		if (io->flags & DNET_IO_FLAGS_COMPARE_AND_SWAP) {
+	//			err = dnet_cas_local(backend, n, &cmd->id, io->parent, DNET_ID_SIZE);
+	//			if (err != 0 && err != -ENOENT)
+	//				break;
+	//		}
+	//	}
+	//
+	//	if (io->flags & DNET_IO_FLAGS_CACHE_ONLY)
+	//		break;
+	//
+	//	dnet_convert_io_attr(io);
 	default:
 		if ((n->ro || dnet_backend_read_only(backend)) &&
 		    ((cmd->cmd == DNET_CMD_DEL_NEW) || 
@@ -1609,7 +1613,7 @@ static int dnet_process_cmd_with_backend_raw(struct dnet_net_state *st,
 
 		if (!(cmd->flags & DNET_FLAGS_NOCACHE) &&
 		    ((cmd->cmd == DNET_CMD_LOOKUP) || (cmd->cmd == DNET_CMD_LOOKUP_NEW))) {
-			err = dnet_cmd_cache_io(backend, st, cmd, data, cmd_stats, context);
+			err = dnet_cmd_cache_io(backend, st, common_req, cmd_stats, context);
 			if (err != -ENOTSUP && err != -ENOENT)
 				break;
 		}
@@ -1617,7 +1621,7 @@ static int dnet_process_cmd_with_backend_raw(struct dnet_net_state *st,
 		if ((cmd->cmd == DNET_CMD_WRITE_NEW) ||
 		    (cmd->cmd == DNET_CMD_READ_NEW) ||
 		    (cmd->cmd == DNET_CMD_DEL_NEW)) {
-			err = dnet_cmd_cache_io(backend, st, cmd, data, cmd_stats, context);
+			err = dnet_cmd_cache_io(backend, st, common_req, cmd_stats, context);
 			if (err != -ENOTSUP)
 				break;
 		}
@@ -1635,9 +1639,10 @@ static int dnet_process_cmd_with_backend_raw(struct dnet_net_state *st,
 			cmd->flags &= ~DNET_FLAGS_NEED_ACK;
 		}
 
-		err = dnet_backend_process_cmd_raw(backend, st, cmd, data, cmd_stats, context);
-		if (!err && (cmd->cmd == DNET_CMD_WRITE))
-			dnet_update_notify(st, cmd, data);
+		err = dnet_backend_process_cmd_raw(backend, st, common_req, cmd_stats, context);
+		// TODO(sabramkin): uncomment and repair
+		//if (!err && (cmd->cmd == DNET_CMD_WRITE))
+		//	dnet_update_notify(st, cmd, data);
 		break;
 	}
 
@@ -1667,13 +1672,13 @@ static int dnet_process_cmd_with_backend_raw(struct dnet_net_state *st,
 }
 
 int dnet_process_cmd_raw(struct dnet_net_state *st,
-                         struct dnet_cmd *cmd,
-                         void *data,
+                         struct common_request *common_req,
                          int recursive,
                          const long queue_time,
                          struct dnet_access_context *context) {
 	int err = 0;
 	struct dnet_node *n = st->n;
+	struct dnet_cmd *cmd = access_cmd(common_req);
 	const unsigned long long tid = cmd->trans;
 	struct dnet_io_attr *io = NULL;
 	struct timespec start, end;
@@ -1688,56 +1693,17 @@ int dnet_process_cmd_raw(struct dnet_net_state *st,
 
 	clock_gettime(CLOCK_MONOTONIC_RAW, &start);
 
-	err = dnet_process_cmd_without_backend_raw(st, cmd, data, &cmd_stats, context);
-	if (err == -ENOTSUP)
-		err = dnet_process_cmd_with_backend_raw(st, cmd, data, &cmd_stats, context);
+	// TODO(sabramkin): uncomment and repair
+	//err = dnet_process_cmd_without_backend_raw(st, cmd, data, &cmd_stats, context);
+	//if (err == -ENOTSUP)
+		err = dnet_process_cmd_with_backend_raw(st, common_req, &cmd_stats, context);
 
 	clock_gettime(CLOCK_MONOTONIC_RAW, &end);
 	cmd_stats.handle_time = DIFF_TIMESPEC(start, end);
 
-	switch (cmd->cmd) {
-		case DNET_CMD_READ:
-		case DNET_CMD_WRITE:
-		case DNET_CMD_DEL:
-			if (cmd->size < sizeof(struct dnet_io_attr)) {
-				dnet_log(st->n, DNET_LOG_ERROR, "%s: invalid size: cmd: %u, cmd.size: %llu",
-					dnet_dump_id(&cmd->id), cmd->cmd, (unsigned long long)cmd->size);
-				err = -EINVAL;
-				break;
-			}
-
-			// no need to convert IO attribute here, it is already converted in backend processing code
-			io = data;
-
-
-			break;
-		default:
-			break;
-	}
-
-	if (((cmd->cmd == DNET_CMD_READ) || (cmd->cmd == DNET_CMD_WRITE)) && io) {
-		/* io has been already set in the switch above */
-
-		// TODO(shaitan): it should be set by corresponding handler
-		// when all handlers will accept and update @cmd_stats.
-
-		// do not count error read size
-		// otherwise it leads to HUGE read traffic stats, although nothing was actually read
-		cmd_stats.size = io->size;
-		if (cmd->cmd == DNET_CMD_READ && err < 0)
-			cmd_stats.size = 0;
-
-		dnet_log(n, DNET_LOG_INFO, "%s: %s: client: %s, trans: %llu, cflags: %s, %s, "
-				"time: %ld usecs, queue_time: %ld, err: %d.",
-				dnet_dump_id(&cmd->id), dnet_cmd_string(cmd->cmd), dnet_state_dump_addr(st),
-				tid, dnet_flags_dump_cflags(cmd->flags),
-				dnet_print_io(io),
-				cmd_stats.handle_time, queue_time, err);
-	} else {
-		dnet_log(n, DNET_LOG_INFO, "%s: %s: client: %s, trans: %llu, cflags: %s, time: %ld usecs, queue_time: %ld usecs, err: %d.",
-				dnet_dump_id(&cmd->id), dnet_cmd_string(cmd->cmd), dnet_state_dump_addr(st),
-				tid, dnet_flags_dump_cflags(cmd->flags), cmd_stats.handle_time, queue_time, err);
-	}
+	dnet_log(n, DNET_LOG_INFO, "%s: %s: client: %s, trans: %llu, cflags: %s, time: %ld usecs, queue_time: %ld usecs, err: %d.",
+			dnet_dump_id(&cmd->id), dnet_cmd_string(cmd->cmd), dnet_state_dump_addr(st),
+			tid, dnet_flags_dump_cflags(cmd->flags), cmd_stats.handle_time, queue_time, err);
 
 	dnet_access_context_add_int(context, "status", err);
 

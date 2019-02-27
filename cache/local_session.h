@@ -47,7 +47,6 @@ public:
 	         ioremap::elliptics::data_pointer *data,
 	         dnet_time *data_ts);
 
-	int write(const dnet_id &id, const char *data, size_t size, uint64_t user_flags, const dnet_time &timestamp);
 	int write(const dnet_id &id,
 	          uint64_t user_flags,
 	          const std::string &json,
@@ -57,9 +56,8 @@ public:
 
 	ioremap::elliptics::data_pointer lookup(const dnet_cmd &cmd, int *errp);
 
-	int remove(const struct dnet_id &id, dnet_access_context *context = nullptr);
 	int remove_new(const struct dnet_id &id,
-	               const ioremap::elliptics::dnet_remove_request &request,
+	               const ioremap::elliptics::dnet_remove_request *request,
 	               dnet_access_context *context = nullptr);
 
 private:

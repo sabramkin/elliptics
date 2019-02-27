@@ -36,13 +36,12 @@ public:
 	~slru_cache_t();
 
 	write_response_t write(dnet_net_state *st,
-	                       dnet_cmd *cmd,
-	                       const write_request &request,
-	                       dnet_access_context *context);
+                               ioremap::elliptics::dnet_write_request *request,
+                               dnet_access_context *context);
 
 	read_response_t read(const unsigned char *id, uint64_t ioflags);
 
-	int remove(const dnet_cmd *cmd, ioremap::elliptics::dnet_remove_request &request, dnet_access_context *context);
+	int remove(ioremap::elliptics::dnet_remove_request *request, dnet_access_context *context);
 
 	read_response_t lookup(const unsigned char *id);
 
@@ -80,7 +79,7 @@ private:
 		return page_number + 1;
 	}
 
-	int check_cas(const data_t* it, const dnet_cmd *cmd, const write_request &request) const;
+	int check_cas(const data_t* it, const ioremap::elliptics::dnet_write_request *request) const;
 
 	void sync_if_required(data_t* it, elliptics_unique_lock<std::mutex> &guard);
 

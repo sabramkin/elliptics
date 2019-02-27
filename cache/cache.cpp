@@ -32,43 +32,9 @@
 #include "example/config.hpp"
 #include "local_session.h"
 
+namespace ell = ioremap::elliptics;
+
 namespace ioremap { namespace cache {
-
-write_request::write_request(unsigned char *id, struct dnet_io_attr *io, ioremap::elliptics::data_pointer &data)
-: id(id)
-, ioflags(io->flags)
-, user_flags(io->user_flags)
-, timestamp(io->timestamp)
-, json_capacity(0)
-, data_offset(io->offset)
-, data_capacity(0)
-, data_commit_size(0)
-, cache_lifetime(io->start)
-, data_checksum(&io->parent)
-, request_data(io)
-, data(data) {
-	dnet_empty_time(&json_timestamp);
-}
-
-write_request::write_request(unsigned char *id,
-                             struct ioremap::elliptics::dnet_write_request &req,
-                             void *request_data,
-                             ioremap::elliptics::data_pointer &data,
-                             ioremap::elliptics::data_pointer &json)
-: id(id)
-, ioflags(req.ioflags)
-, user_flags(req.user_flags)
-, timestamp(req.timestamp)
-, json_capacity(req.json_capacity)
-, json_timestamp(req.json_timestamp)
-, data_offset(req.data_offset)
-, data_capacity(req.data_capacity)
-, data_commit_size(req.data_commit_size)
-, cache_lifetime(req.cache_lifetime)
-, data_checksum(nullptr)
-, request_data(request_data)
-, data(data)
-, json(json) {}
 
 static size_t parse_size(const std::string &value) {
 	size_t ret = strtoul(value.c_str(), NULL, 0);
@@ -141,20 +107,18 @@ cache_manager::~cache_manager() {
 }
 
 write_response_t cache_manager::write(dnet_net_state *st,
-                                      dnet_cmd *cmd,
-                                      const write_request &request,
+                                      ell::dnet_write_request *request,
                                       dnet_access_context *context) {
-	return m_caches[idx(request.id)]->write(st, cmd, request, context);
+	return m_caches[idx(request->cmd.id.id)]->write(st, request, context);
 }
 
 read_response_t cache_manager::read(const unsigned char *id, uint64_t ioflags) {
 	return m_caches[idx(id)]->read(id, ioflags);
 }
 
-int cache_manager::remove(const dnet_cmd *cmd,
-                          ioremap::elliptics::dnet_remove_request &request,
+int cache_manager::remove(ell::dnet_remove_request *request,
                           dnet_access_context *context) {
-	return m_caches[idx(cmd->id.id)]->remove(cmd, request, context);
+	return m_caches[idx(request->cmd.id.id)]->remove(request, context);
 }
 
 read_response_t cache_manager::lookup(const unsigned char *id) {
@@ -225,183 +189,72 @@ size_t cache_manager::idx(const unsigned char *id) {
 
 using namespace ioremap::cache;
 
-static int dnet_cmd_cache_io_write(struct cache_manager *cache,
-                                   struct dnet_net_state *st,
-                                   struct dnet_cmd *cmd,
-                                   struct dnet_io_attr *io,
-                                   char *data,
-                                   struct dnet_cmd_stats *cmd_stats) {
-	write_status status;
-	int err;
-
-	auto data_p = ioremap::elliptics::data_pointer::from_raw(data, io->size);
-
-	std::tie(status, err, std::ignore) = cache->write(st,
-	                                                  cmd,
-	                                                  {io->id, io, data_p},
-	                                                  /*context*/ nullptr);
-
-	switch (status) {
-	case write_status::ERROR:
-		break;
-	case write_status::HANDLED_IN_BACKEND:
-		cmd_stats->size = io->size;
-		cmd_stats->handled_in_cache = 0;
-
-		cmd->flags &= ~DNET_FLAGS_NEED_ACK;
-		break;
-	case write_status::HANDLED_IN_CACHE:
-		cmd_stats->size = io->size;
-		cmd_stats->handled_in_cache = 1;
-
-		cmd->flags &= ~DNET_FLAGS_NEED_ACK;
-		err = dnet_send_file_info_ts_without_fd(st, cmd, data, io->size, &io->timestamp);
-		break;
-	}
-
-	return err;
-}
-
 static int dnet_cmd_cache_io_write_new(struct cache_manager *cache,
                                        struct dnet_net_state *st,
-                                       struct dnet_cmd *cmd,
-                                       void *data,
+                                       ell::dnet_write_request *request,
                                        struct dnet_cmd_stats *cmd_stats,
                                        dnet_access_context *context) {
-	using namespace ioremap::elliptics;
+	using namespace ell;
 
-	auto data_p = data_pointer::from_raw(data, cmd->size);
-
-	auto request = [&data_p] () {
-		size_t offset = 0;
-		dnet_write_request request;
-		deserialize(data_p, request, offset);
-		data_p = data_p.skip(offset);
-		return request;
-	} ();
-
-	if (request.ioflags & DNET_IO_FLAGS_NOCACHE) {
+	if (request->ioflags & DNET_IO_FLAGS_NOCACHE) {
 		return -ENOTSUP;
 	}
 
-	auto json = data_p.slice(0, request.json_size);
-	data_p = data_p.slice(request.json_size, request.data_size);
-
 	write_status status;
 	int err;
 	cache_item it;
 
-	std::tie(status, err, it) = cache->write(st,
-	                                         cmd,
-	                                         {cmd->id.id, request, data, data_p, json},
-	                                         context);
+	std::tie(status, err, it) = cache->write(st, request, context);
 
 	if (status == write_status::HANDLED_IN_CACHE) {
-		dnet_lookup_response response;
-		response.record_flags = 0;
-		response.user_flags = it.user_flags;
-		response.path = "";
-		response.json_timestamp = it.json_timestamp;
-		response.json_offset = 0;
-		response.json_size = it.json->size();
-		response.json_capacity = it.json->size();
-		response.json_checksum = {};
-		response.data_timestamp = it.timestamp;
-		response.data_offset = 0;
-		response.data_size = it.data->size();
-		response.data_checksum = {};
+		auto response = new dnet_lookup_response;
 
-		auto response_packed = serialize(std::move(response));
+		response->cmd = request->cmd;
+		response->cmd.flags |= DNET_FLAGS_REPLY;
+		response->cmd.flags &= ~DNET_FLAGS_NEED_ACK;
 
-		cmd_stats->size = request.json_size + request.data_size;
+		response->record_flags = 0;
+		response->user_flags = it.user_flags;
+		response->json_timestamp = it.json_timestamp;
+		response->json_offset = 0;
+		response->json_size = it.json->size();
+		response->json_capacity = it.json->size();
+		response->data_timestamp = it.timestamp;
+		response->data_offset = 0;
+		response->data_size = it.data->size();
+
+		cmd_stats->size = request->json.size() + request->data.size();
 		cmd_stats->handled_in_cache = 1;
 
-		cmd->flags &= ~DNET_FLAGS_NEED_ACK;
-		err = dnet_send_reply(st, cmd, response_packed.data(), response_packed.size(), 0, context);
+		request->cmd.flags &= ~DNET_FLAGS_NEED_ACK;
+
+		err = dnet_send_response(st, response, context);
+
 	} else if (status == write_status::HANDLED_IN_BACKEND) {
-		cmd_stats->size = request.json_size + request.data_size;
+		cmd_stats->size = request->json_size + request->data_size;
 		cmd_stats->handled_in_cache = 0;
 
-		cmd->flags &= ~DNET_FLAGS_NEED_ACK;
+		request->cmd.flags &= ~DNET_FLAGS_NEED_ACK;
 	}
 
 	return err;
-}
-
-static int dnet_cmd_cache_io_read(struct cache_manager *cache,
-                                  struct dnet_net_state *st,
-                                  struct dnet_cmd *cmd,
-                                  struct dnet_io_attr *io,
-                                  struct dnet_cmd_stats *cmd_stats) {
-	struct dnet_node *n = st->n;
-
-	int err;
-	cache_item it;
-
-	std::tie(err, it) = cache->read(io->id, io->flags);
-	if (err) {
-		return err;
-	}
-
-	auto d = it.data;
-
-	/*!
-	 * When offset is larger then size of the file, operation is definitely incorrect
-	 */
-	if (io->offset >= d->size()) {
-		DNET_LOG_ERROR(n, "{}: {} cache: invalid offset: offset: {}, size: {}, cached-size: {}",
-		               dnet_dump_id(&cmd->id), dnet_cmd_string(cmd->cmd), io->offset, io->size, d->size());
-		return -EINVAL;
-	}
-
-	/*!
-	 * If offset is correct, but offset + read_size is bigger then file_size
-	 * then we should return data from offset position till the end of the file
-	 * This situation happens when for example we want to read first 100 bytes of
-	 * the file and it's size appears to be less then 100 bytes.
-	 */
-	io->size = std::min(io->size, d->size() - io->offset);
-
-	/*!
-	 * 0 is special value for io operation size and in this case we should read all file
-	 */
-	if (io->size == 0)
-		io->size = d->size() - io->offset;
-
-	io->total_size = d->size();
-
-	io->timestamp = it.timestamp;
-	io->user_flags = it.user_flags;
-
-	cmd_stats->size = io->size;
-	cmd_stats->handled_in_cache = 1;
-
-	cmd->flags &= ~DNET_FLAGS_NEED_ACK;
-	return dnet_send_read_data(st, cmd, io, &d->at(io->offset), -1, io->offset, 0);
 }
 
 static int dnet_cmd_cache_io_read_new(struct cache_manager *cache,
                                       struct dnet_net_state *st,
-                                      struct dnet_cmd *cmd,
-                                      void *data,
+                                      ell::dnet_read_request *request,
                                       struct dnet_cmd_stats *cmd_stats,
                                       dnet_access_context *context) {
-	using namespace ioremap::elliptics;
+	using namespace ell;
 
-	auto request = [&data, &cmd] () {
-		dnet_read_request request;
-		deserialize(data_pointer::from_raw(data, cmd->size), request);
-		return request;
-	} ();
-
-	if (request.ioflags & DNET_IO_FLAGS_NOCACHE) {
+	if (request->ioflags & DNET_IO_FLAGS_NOCACHE) {
 		return -ENOTSUP;
 	}
 
 	int err;
 	cache_item it;
 
-	std::tie(err, it) = cache->read(cmd->id.id, request.ioflags);
+	std::tie(err, it) = cache->read(request->cmd.id.id, request->ioflags);
 	if (err) {
 		return err;
 	}
@@ -411,258 +264,186 @@ static int dnet_cmd_cache_io_read_new(struct cache_manager *cache,
 
 	data_pointer json, data_p;
 
-	if (request.read_flags & DNET_READ_FLAGS_JSON) {
+	if (request->read_flags & DNET_READ_FLAGS_JSON) {
 		json = data_pointer::from_raw(*raw_json);
 	}
 
-	if (request.read_flags & DNET_READ_FLAGS_DATA) {
-		if (request.data_offset && request.data_offset >= raw_data->size())
+	if (request->read_flags & DNET_READ_FLAGS_DATA) {
+		if (request->data_offset && request->data_offset >= raw_data->size())
 			return -E2BIG;
 
-		uint64_t data_size = raw_data->size() - request.data_offset;
+		uint64_t data_size = raw_data->size() - request->data_offset;
 
-		if (request.data_size) {
-			data_size = std::min(data_size, request.data_size);
+		if (request->data_size) {
+			data_size = std::min(data_size, request->data_size);
 		}
 
 		data_p = data_pointer::from_raw(*raw_data);
-		data_p = data_p.slice(request.data_offset, data_size);
+		data_p = data_p.slice(request->data_offset, data_size);
 	}
 
-	dnet_read_response response;
-	response.record_flags = 0;
-	response.user_flags = it.user_flags;
-	response.json_timestamp = it.json_timestamp;
-	response.json_size = raw_json->size();
-	response.json_capacity = raw_json->size();
-	response.read_json_size = json.size();
-	response.data_timestamp = it.timestamp;
-	response.data_size = raw_data->size();
-	response.read_data_offset = request.data_offset;
-	response.read_data_size = data_p.size();
+	auto response = new dnet_read_response;
 
-	auto header = serialize(std::move(response));
+	response->cmd = request->cmd;
+	response->cmd.flags |= DNET_FLAGS_REPLY;
+	response->cmd.flags &= ~DNET_FLAGS_NEED_ACK;
 
-	// NB! Following code is a copy-paste from blob_read_new()
-	auto response_packed = data_pointer::allocate(sizeof(*cmd) + header.size() + json.size());
-	memcpy(response_packed.data(), cmd, sizeof(*cmd));
-	memcpy(response_packed.skip(sizeof(*cmd)).data(), header.data(), header.size());
-	if (!json.empty())
-		memcpy(response_packed.skip(sizeof(*cmd) + header.size()).data(), json.data(), json.size());
-
-	response_packed.data<dnet_cmd>()->size = header.size() + json.size() + data_p.size();
-	response_packed.data<dnet_cmd>()->flags |= DNET_FLAGS_REPLY;
-	response_packed.data<dnet_cmd>()->flags &= ~DNET_FLAGS_NEED_ACK;
+	response->record_flags = 0;
+	response->user_flags = it.user_flags;
+	response->json_timestamp = it.json_timestamp;
+	response->json_size = raw_json->size();
+	response->json_capacity = raw_json->size();
+	response->read_json_size = json.size();
+	// TODO(sabramkin): lifetime of json in cache memory = ? maybe not copy?
+	response->json = data_pointer::copy(json);
+	response->data_timestamp = it.timestamp;
+	response->data_size = raw_data->size();
+	response->read_data_offset = request->data_offset;
+	response->read_data_size = data_p.size();
+	// TODO(sabramkin): lifetime of data in cache memory = ? maybe not copy?
+	response->data = data_place::from_memory(data_pointer::copy(data_p));
 
 	cmd_stats->size = json.size() + data_p.size();
 	cmd_stats->handled_in_cache = 1;
 
-	cmd->flags &= ~DNET_FLAGS_NEED_ACK;
-	return dnet_send_data(st, response_packed.data(), response_packed.size(),
-		              data_p.data(), data_p.size(), context);
+	request->cmd.flags &= ~DNET_FLAGS_NEED_ACK;
+
+	return dnet_send_response(st, response, context);
 }
 
-static int dnet_cmd_cache_io_lookup(struct dnet_backend *backend,
-                                    struct dnet_net_state *st,
-                                    struct dnet_cmd *cmd,
-                                    struct dnet_cmd_stats *cmd_stats) {
-	cmd_stats->handled_in_cache = 1;
-
-	int err;
-	cache_item it;
-
-	std::tie(err, it) = backend->cache()->lookup(cmd->id.id);
-	if (err) {
-		return err;
-	}
-
-
-	// go check object on disk
-	local_session sess(*backend, st->n);
-	cmd->flags |= DNET_FLAGS_NOCACHE;
-	ioremap::elliptics::data_pointer data = sess.lookup(*cmd, &err);
-	cmd->flags &= ~DNET_FLAGS_NOCACHE;
-
-	cmd->flags &= ~(DNET_FLAGS_MORE | DNET_FLAGS_NEED_ACK);
-
-	if (err) {
-		// zero size means 'we didn't find key on disk', but yet it exists in cache
-		// lookup by its nature is 'show me what is on disk' command
-		return dnet_send_file_info_ts_without_fd(st, cmd, nullptr, 0, &it.timestamp);
-	}
-
-	auto info = data.skip<dnet_addr>().data<dnet_file_info>();
-	info->mtime = it.timestamp;
-
-	return dnet_send_reply(st, cmd, data.data(), data.size(), 0, /*context*/ nullptr);
-}
-
-static int dnet_cmd_cache_io_lookup_new(struct cache_manager *cache,
-                                        struct dnet_net_state *st,
-                                        struct dnet_cmd *cmd,
-                                        struct dnet_cmd_stats *cmd_stats,
-                                        dnet_access_context *context) {
-	using namespace ioremap::elliptics;
-	cmd_stats->handled_in_cache = 1;
-
-	int err;
-	cache_item it;
-
-	std::tie(err, it) = cache->lookup(cmd->id.id);
-	if (err) {
-		return err;
-	}
-
-	std::vector<unsigned char> json_checksum;
-	std::vector<unsigned char> data_checksum;
-
-	if (cmd->flags & DNET_FLAGS_CHECKSUM) {
-		auto calculate_checksum = [st, cmd, context] (const std::shared_ptr<std::string> &data,
-		                                              std::vector<unsigned char> &checksum,
-		                                              const char *csum_subject,
-		                                              const char *csum_time_ctx_attr) {
-			if (!data || !data->size()) {
-				return 0;
-			}
-
-			checksum.resize(DNET_CSUM_SIZE);
-
-			util::steady_timer timer;
-			int err = dnet_checksum_data(st->n, data->data(), data->size(),
-			                             checksum.data(), checksum.size());
-			uint64_t csum_time = timer.get_us();
-			if (context) {
-				context->add({{csum_time_ctx_attr, csum_time}});
-			}
-			if (err) {
-				DNET_LOG_ERROR(st->n, "{}: {} dnet_cmd_cache_io_lookup_new: failed to calculate {} "
-				               "checksum: {} [{}]", dnet_dump_id(&cmd->id), dnet_cmd_string(cmd->cmd),
-				               csum_subject, strerror(-err), err);
-				return err;
-			}
-
-			return 0;
-		};
-
-		err = calculate_checksum(it.json, json_checksum, "json", "json_csum_time");
-		if (err) {
-			return err;
-		}
-
-		err = calculate_checksum(it.data, data_checksum, "data", "data_csum_time");
-		if (err) {
-			return err;
-		}
-	}
-
-	dnet_lookup_response response;
-	response.record_flags = 0;
-	response.user_flags = it.user_flags;
-	response.path = "";
-	response.json_timestamp = it.json_timestamp;
-	response.json_offset = 0;
-	response.json_size = it.json->size();
-	response.json_capacity = it.json->size();
-	response.json_checksum = std::move(json_checksum);
-	response.data_timestamp = it.timestamp;
-	response.data_offset = 0;
-	response.data_size = it.data->size();
-	response.data_checksum = std::move(data_checksum);
-
-	auto response_packed = serialize(std::move(response));
-
-	cmd->flags &= ~DNET_FLAGS_NEED_ACK;
-	return dnet_send_reply(st, cmd, response_packed.data(), response_packed.size(), 0, context);
-}
-
-static int dnet_cmd_cache_io_remove(struct cache_manager *cache,
-				    struct dnet_cmd *cmd,
-				    struct dnet_io_attr *io,
-				    struct dnet_cmd_stats *cmd_stats,
-				    dnet_access_context *context) {
-	ioremap::elliptics::dnet_remove_request request;
-	request.ioflags = io->flags;
-	request.timestamp = {0, 0};
-
-	const int err = cache->remove(cmd, request, context);
-	if (!err) {
-		cmd_stats->handled_in_cache = 1;
-	}
-	return err;
-}
-
-static int dnet_cmd_cache_io_remove_new(struct cache_manager *cache,
-                                        struct dnet_cmd *cmd,
-                                        void *data,
-                                        struct dnet_cmd_stats *cmd_stats,
-                                        dnet_access_context *context) {
-	using namespace ioremap::elliptics;
-
-	auto request = [&data, &cmd] () {
-		dnet_remove_request request;
-		deserialize(data_pointer::from_raw(data, cmd->size), request);
-		return request;
-	} ();
-
-	if (request.ioflags & DNET_IO_FLAGS_NOCACHE) {
-		return -ENOTSUP;
-	}
-
-	const int err = cache->remove(cmd, request, context);
-	if (!err) {
-		cmd_stats->handled_in_cache = 1;
-	}
-	return err;
-}
+// TODO(sabramkin): repair
+//static int dnet_cmd_cache_io_lookup_new(struct cache_manager *cache,
+//                                        struct dnet_net_state *st,
+//                                        struct dnet_cmd *cmd,
+//                                        struct dnet_cmd_stats *cmd_stats,
+//                                        dnet_access_context *context) {
+//	using namespace ell;
+//	cmd_stats->handled_in_cache = 1;
+//
+//	int err;
+//	cache_item it;
+//
+//	std::tie(err, it) = cache->lookup(cmd->id.id);
+//	if (err) {
+//		return err;
+//	}
+//
+//	std::vector<unsigned char> json_checksum;
+//	std::vector<unsigned char> data_checksum;
+//
+//	if (cmd->flags & DNET_FLAGS_CHECKSUM) {
+//		auto calculate_checksum = [st, cmd, context] (const std::shared_ptr<std::string> &data,
+//		                                              std::vector<unsigned char> &checksum,
+//		                                              const char *csum_subject,
+//		                                              const char *csum_time_ctx_attr) {
+//			if (!data || !data->size()) {
+//				return 0;
+//			}
+//
+//			checksum.resize(DNET_CSUM_SIZE);
+//
+//			util::steady_timer timer;
+//			int err = dnet_checksum_data(st->n, data->data(), data->size(),
+//			                             checksum.data(), checksum.size());
+//			uint64_t csum_time = timer.get_us();
+//			if (context) {
+//				context->add({{csum_time_ctx_attr, csum_time}});
+//			}
+//			if (err) {
+//				DNET_LOG_ERROR(st->n, "{}: {} dnet_cmd_cache_io_lookup_new: failed to calculate {} "
+//				               "checksum: {} [{}]", dnet_dump_id(&cmd->id), dnet_cmd_string(cmd->cmd),
+//				               csum_subject, strerror(-err), err);
+//				return err;
+//			}
+//
+//			return 0;
+//		};
+//
+//		err = calculate_checksum(it.json, json_checksum, "json", "json_csum_time");
+//		if (err) {
+//			return err;
+//		}
+//
+//		err = calculate_checksum(it.data, data_checksum, "data", "data_csum_time");
+//		if (err) {
+//			return err;
+//		}
+//	}
+//
+//	auto response = serialize(dnet_lookup_response{
+//		0, // record_flags
+//		it.user_flags, // user_flags
+//		"", // path
+//
+//		it.json_timestamp, // json_timestamp
+//		0, // json_offset
+//		it.json->size(), // json_size
+//		it.json->size(), // json_capacity
+//		std::move(json_checksum), // json_checksum
+//
+//		it.timestamp, // data_timestamp
+//		0, // data_offset
+//		it.data->size(), // data_size
+//		std::move(data_checksum), // data_checksum
+//	});
+//
+//	cmd->flags &= ~DNET_FLAGS_NEED_ACK;
+//	return dnet_send_reply(st, cmd, response.data(), response.size(), 0, context);
+//}
+//
+//static int dnet_cmd_cache_io_remove_new(struct cache_manager *cache,
+//                                        struct dnet_cmd *cmd,
+//                                        void *data,
+//                                        struct dnet_cmd_stats *cmd_stats,
+//                                        dnet_access_context *context) {
+//	using namespace ell;
+//
+//	auto request = [&data, &cmd] () {
+//		dnet_remove_request request;
+//		deserialize(data_pointer::from_raw(data, cmd->size), request);
+//		return request;
+//	} ();
+//
+//	if (request.ioflags & DNET_IO_FLAGS_NOCACHE) {
+//		return -ENOTSUP;
+//	}
+//
+//	const int err = cache->remove(cmd, request, context);
+//	if (!err) {
+//		cmd_stats->handled_in_cache = 1;
+//	}
+//	return err;
+//}
 
 int dnet_cmd_cache_io(struct dnet_backend *backend,
                       struct dnet_net_state *st,
-                      struct dnet_cmd *cmd,
-                      char *data,
+                      struct common_request *common_req,
                       struct dnet_cmd_stats *cmd_stats,
                       struct dnet_access_context *context) {
+	auto cmd = &common_req->cmd;
 	if (cmd->flags & DNET_FLAGS_NOCACHE)
 		return -ENOTSUP;
 
-	auto io = [ cmd, &data ]() -> struct dnet_io_attr * {
-		switch (cmd->cmd) {
-		case DNET_CMD_WRITE:
-		case DNET_CMD_READ:
-		case DNET_CMD_DEL:
-			auto ret = reinterpret_cast<struct dnet_io_attr*>(data);
-			data += sizeof(struct dnet_io_attr);
-			return ret;
-		}
-		return nullptr;
-	}();
-
 	auto cache = backend->cache();
-	if (!cache) {
-		if (io && (io->flags & DNET_IO_FLAGS_CACHE))
-			DNET_LOG_NOTICE(st->n, "{}: cache is not supported", dnet_dump_id(&cmd->id));
-		return -ENOTSUP;
-	}
 
 	FORMATTED(HANDY_TIMER_SCOPE, ("cache.%s", dnet_cmd_string(cmd->cmd)));
 
 	try {
 		switch (cmd->cmd) {
-		case DNET_CMD_WRITE:
-			return dnet_cmd_cache_io_write(cache, st, cmd, io, data, cmd_stats);
-		case DNET_CMD_READ:
-			return dnet_cmd_cache_io_read(cache, st, cmd, io, cmd_stats);
-		case DNET_CMD_LOOKUP:
-			return dnet_cmd_cache_io_lookup(backend, st, cmd, cmd_stats);
-		case DNET_CMD_DEL:
-			return dnet_cmd_cache_io_remove(cache, cmd, io, cmd_stats, context);
 		case DNET_CMD_WRITE_NEW:
-			return dnet_cmd_cache_io_write_new(cache, st, cmd, data, cmd_stats, context);
+			return dnet_cmd_cache_io_write_new(cache, st,
+				                           static_cast<ell::dnet_write_request*>(common_req),
+			                                   cmd_stats, context);
 		case DNET_CMD_READ_NEW:
-			return dnet_cmd_cache_io_read_new(cache, st, cmd, data, cmd_stats, context);
-		case DNET_CMD_LOOKUP_NEW:
-			return dnet_cmd_cache_io_lookup_new(cache, st, cmd, cmd_stats, context);
-		case DNET_CMD_DEL_NEW:
-			return dnet_cmd_cache_io_remove_new(cache, cmd, data, cmd_stats, context);
+			return dnet_cmd_cache_io_read_new(cache, st,
+				                          static_cast<ell::dnet_read_request*>(common_req),
+			                                  cmd_stats, context);
+// TODO(sabramkin): repair
+//
+//		case DNET_CMD_LOOKUP_NEW:
+//			return dnet_cmd_cache_io_lookup_new(cache, st, cmd, cmd_stats, context);
+//		case DNET_CMD_DEL_NEW:
+//			return dnet_cmd_cache_io_remove_new(cache, cmd, data, cmd_stats, context);
 		default:
 			return -ENOTSUP;
 		}
@@ -671,5 +452,4 @@ int dnet_cmd_cache_io(struct dnet_backend *backend,
 		               dnet_cmd_string(cmd->cmd), e.what());
 		return -ENOENT;
 	}
-
 }

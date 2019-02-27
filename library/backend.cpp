@@ -1528,10 +1528,9 @@ uint64_t dnet_backend_get_queue_timeout(struct dnet_node *node, ssize_t backend_
 
 int dnet_backend_process_cmd_raw(struct dnet_backend *backend,
                                  struct dnet_net_state *st,
-                                 struct dnet_cmd *cmd,
-                                 void *data,
+                                 struct common_request *common_req,
                                  struct dnet_cmd_stats *cmd_stats,
                                  struct dnet_access_context *context) {
 	auto &callbacks = backend->callbacks();
-	return callbacks.command_handler(st, callbacks.command_private, cmd, data, cmd_stats, context);
+	return callbacks.command_handler(st, callbacks.command_private, common_req, cmd_stats, context);
 }
