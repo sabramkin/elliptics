@@ -303,7 +303,7 @@ static inline void dnet_convert_cmd(struct dnet_cmd *cmd)
 	cmd->flags = dnet_bswap64(cmd->flags);
 	cmd->cmd = dnet_bswap32(cmd->cmd);
 	cmd->status = dnet_bswap32(cmd->status);
-	cmd->size = dnet_bswap64(cmd->size);
+	cmd->serialized_size = dnet_bswap64(cmd->serialized_size);
 	cmd->trans = dnet_bswap64(cmd->trans);
 }
 
