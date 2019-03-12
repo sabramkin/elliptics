@@ -33,6 +33,7 @@
 
 #include <netinet/tcp.h>
 
+#include "access_context.h"
 #include "elliptics.h"
 #include "elliptics/packet.h"
 #include "elliptics/interface.h"

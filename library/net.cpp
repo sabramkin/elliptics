@@ -705,7 +705,7 @@ static void dnet_process_socket(const dnet_connect_state_ptr &state, epoll_event
 		                dnet_addr_string(&socket->addr));
 
 		socket->state = started;
-		// Fall through
+		[[fallthrough]];
 	}
 	case started:
 		memset(cmd, 0, sizeof(dnet_cmd));
@@ -720,7 +720,7 @@ static void dnet_process_socket(const dnet_connect_state_ptr &state, epoll_event
 		socket->io_data = reinterpret_cast<char*>(cmd);
 		socket->io_size = sizeof(dnet_cmd);
 
-		// Fall through
+		[[fallthrough]];
 	case send_reverse:
 		if (!dnet_send_nolock(state, socket))
 			break;
@@ -732,7 +732,7 @@ static void dnet_process_socket(const dnet_connect_state_ptr &state, epoll_event
 			break;
 
 		socket->state = recv_reverse;
-		// Fall through
+		[[fallthrough]];
 	case recv_reverse: {
 		if (!dnet_recv_nolock(state, socket))
 			break;
@@ -782,7 +782,7 @@ static void dnet_process_socket(const dnet_connect_state_ptr &state, epoll_event
 		socket->io_size = cmd->size;
 
 		socket->state = recv_reverse_data;
-		// Fall through
+		[[fallthrough]];
 	}
 	case recv_reverse_data: {
 		if (!dnet_recv_nolock(state, socket))

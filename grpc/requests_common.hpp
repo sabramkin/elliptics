@@ -11,7 +11,7 @@
 #include <grpcpp/server_builder.h>
 #include <grpcpp/server_context.h>
 
-#include "elliptics.grpc.fb.h"
+#include "elliptics_generated_wrapper.hpp"
 
 #include "elliptics/utils.hpp"
 

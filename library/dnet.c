@@ -1453,7 +1453,7 @@ static int dnet_cmd_notify(struct dnet_net_state *st, struct dnet_cmd *cmd) {
 static int dnet_process_cmd_without_backend_raw(struct dnet_net_state *st,
                                                 struct dnet_cmd *cmd,
                                                 void *data,
-                                                struct dnet_cmd_stats *cmd_stats,
+                                                struct dnet_cmd_stats *cmd_stats __attribute__((unused)),
                                                 struct dnet_access_context *context) {
 	switch (cmd->cmd) {
 	case DNET_CMD_AUTH:
@@ -1598,6 +1598,7 @@ static int dnet_process_cmd_with_backend_raw(struct dnet_net_state *st,
 			break;
 
 		dnet_convert_io_attr(io);
+		/* Falls through */
 	default:
 		if ((n->ro || dnet_backend_read_only(backend)) &&
 		    ((cmd->cmd == DNET_CMD_DEL_NEW) || 

@@ -38,7 +38,7 @@ static std::vector<T> convert_to_vector(const bp::api::object &list) {
 }
 
 template<>
-std::vector<data_pointer> convert_to_vector<data_pointer>(const bp::api::object &list) {
+[[maybe_unused]] std::vector<data_pointer> convert_to_vector<data_pointer>(const bp::api::object &list) {
 	auto wdatas = convert_to_vector<std::string>(list);
 	std::vector<data_pointer> ret;
 	for (auto it = wdatas.begin(), end = wdatas.end(); it != end; ++it) {

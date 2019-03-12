@@ -257,7 +257,8 @@ int dnet_monitor_process_cmd(struct dnet_net_state *orig, struct dnet_cmd *cmd, 
 	}
 	
 	ioremap::monitor::request request(req->categories);
-	uint32_t *backeds_ids_buff = static_cast<uint32_t *>(data + sizeof(struct dnet_monitor_stat_request));
+	uint32_t *backeds_ids_buff = reinterpret_cast<uint32_t *>(static_cast<char *>(data) +
+	                                                          sizeof(struct dnet_monitor_stat_request));
 	for (size_t i = 0; i < req->backends_number; ++i) {
 		request.backends_ids.insert(dnet_bswap32(backeds_ids_buff[i]));
 	}

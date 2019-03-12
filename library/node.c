@@ -618,8 +618,8 @@ ssize_t dnet_state_search_backend(struct dnet_node *n, const struct dnet_id *id)
 	return backend_id;
 }
 
-int dnet_get_backend_weight(struct dnet_net_state *st, int backend_id, uint32_t ioflags, double *weight)
-{
+int dnet_get_backend_weight(struct dnet_net_state *st, int backend_id, uint32_t ioflags __attribute__((unused)),
+                            double *weight) {
 	struct dnet_idc *idc;
 	int err = -ENOENT;
 
@@ -639,8 +639,8 @@ int dnet_get_backend_weight(struct dnet_net_state *st, int backend_id, uint32_t 
 	return err;
 }
 
-void dnet_set_backend_weight(struct dnet_net_state *st, int backend_id, uint32_t ioflags, double weight)
-{
+void dnet_set_backend_weight(struct dnet_net_state *st, int backend_id, uint32_t ioflags __attribute__((unused)),
+                             double weight) {
 	struct dnet_idc *idc;
 
 	pthread_rwlock_rdlock(&st->idc_lock);
