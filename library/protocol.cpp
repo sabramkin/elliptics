@@ -511,7 +511,6 @@ inline msgpack::packer<Stream> &operator <<(msgpack::packer<Stream> &o,
 	return o;
 }
 
-
 } // namespace msgpack
 
 namespace ioremap { namespace elliptics {
@@ -587,6 +586,15 @@ void validate_json(const std::string &json) {
 	}
 }
 
+data_pointer serialize(const dnet_json_header &value) {
+	return serialize<dnet_json_header>(value);
+}
+
+void deserialize(const data_pointer &data, dnet_json_header &value) {
+	size_t offset = 0;
+	deserialize<dnet_json_header>(data, value, offset);
+}
+
 #define DEFINE_HEADER(TYPE) \
 template data_pointer serialize<TYPE>(const TYPE &); \
 template void deserialize(const data_pointer &data, TYPE &value, size_t &offset);
@@ -608,5 +616,4 @@ DEFINE_HEADER(dnet_server_send_request);
 
 DEFINE_HEADER(dnet_bulk_read_request);
 
-DEFINE_HEADER(dnet_json_header);
 }} // namespace ioremap::elliptics

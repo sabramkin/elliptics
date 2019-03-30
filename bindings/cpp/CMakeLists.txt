@@ -21,22 +21,28 @@ set(ELLIPTICS_CLIENT_SRCS
     newapi/session.cpp
     newapi/result_entry.cpp
     newapi/bulk_remove_handler.cpp
-    ../../library/protocol.cpp
+    ../../library/access_context.cpp
+    ../../library/common.cpp
     ../../library/compat.c
     ../../library/crypto.c
     ../../library/crypto/sha512.c
     ../../library/dnet_common.c
+    ../../library/n2_protocol.cpp
     ../../library/net.c
     ../../library/net.cpp
     ../../library/node.c
     ../../library/notify_common.c
+    ../../library/old_protocol/deserialize.cpp
+    ../../library/old_protocol/old_protocol.cpp
+    ../../library/old_protocol/serialize.cpp
+    ../../library/old_protocol/translate_request.cpp
     ../../library/pool.c
+    ../../library/pool.cpp
+    ../../library/protocol.cpp
     ../../library/request_queue.cpp
     ../../library/rbtree.c
     ../../library/trans.c
     ../../library/tests.c
-    ../../library/common.cpp
-    ../../library/access_context.cpp
 # Added includes for better IDE's experience
     ../../include/elliptics/interface.h
     ../../include/elliptics/utils.hpp

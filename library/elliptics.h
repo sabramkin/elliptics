@@ -58,29 +58,58 @@ struct dnet_group;
 struct dnet_net_state;
 struct dnet_cmd_stats;
 struct dnet_access_context;
+struct n2_net_iovec;
+struct n2_request_info;
+struct n2_response_info;
+
+// Define which fields of dnet_io_req are used
+enum dnet_io_req_type {
+	DNET_IO_REQ_OLD_PROTOCOL = 0, // deprecated old-protocol-dependent fields
+	DNET_IO_REQ_TYPED_REQUEST = 1, // dnet_io_req::request_info
+	DNET_IO_REQ_TYPED_RESPONSE = 2, // dnet_io_req::response_info
+};
 
 struct dnet_io_req {
-	struct list_head	req_entry;
+	struct list_head		req_entry;
 
-	struct dnet_net_state	*st;
+	struct dnet_net_state		*st;
 
-	void			*header;
-	size_t			hsize;
+	// TODO: remove deprecated fields after refactoring complete
+	void				*header; /*Deprecated*/
+	size_t				hsize; /*Deprecated*/
 
-	void			*data;
-	size_t			dsize;
+	void				*data; /*Deprecated*/
+	size_t				dsize; /*Deprecated*/
 
-	int			on_exit;
-	int			fd;
-	off_t			local_offset;
-	size_t			fsize;
+	int				on_exit; /*Deprecated*/
+	int				fd; /*Deprecated*/
+	off_t				local_offset; /*Deprecated*/
+	size_t				fsize; /*Deprecated*/
 
-	struct timespec		queue_start_ts;
-	uint64_t		queue_time;
-	uint64_t		recv_time;
+	struct timespec			queue_start_ts;
+	uint64_t			queue_time;
+	uint64_t			recv_time;
 
-	struct dnet_access_context *context;
+	struct dnet_access_context 	*context;
+
+	// Protocol-independent members:
+	enum dnet_io_req_type		io_req_type;
+	struct n2_request_info		*request_info;
+	struct n2_response_info		*response_info;
+
+	// Temporary old-protocol send-list members: struct dnet_io_req is currently used both in request_queue
+	// and send_list. Send_list is protocol-specific and contains serialized messages which are ready to
+	// send by net. On transitional period we keep old send_list, but store serialized data in new substructure.
+	// TODO: move it to protocol-specific send_list when protocol logic'll be fully extracted
+	struct n2_net_iovec		*iov;
+
 };
+
+// Because of variability of dnet_io_req, dnet_cmd can be hold there differently. Here the accessors:
+// * accessor to cmd copy (to read info)
+struct dnet_cmd *dnet_io_req_get_cmd(struct dnet_io_req *r);
+// * direct access to cmd in the request (to patch request's cmd fields)
+struct dnet_cmd *dnet_io_req_get_request_cmd_inplace(struct dnet_io_req *r);
 
 #define ELLIPTICS_PROTOCOL_VERSION_0 2
 #define ELLIPTICS_PROTOCOL_VERSION_1 26
@@ -188,6 +217,11 @@ struct dnet_net_state
 	struct dnet_net_epoll_data read_data;
 	struct dnet_net_epoll_data write_data;
 	struct dnet_net_epoll_data accept_data;
+
+	// Currently we save in-forwarding status, to separate responses addressed to server (from forwarded requests -
+	// we support such a responces) from responses addressed to client (we don't support them yet)
+	// TODO(sabramkin): remove this field when client starts to support protocol-independent responses
+	int n2_tmp_forwarding_in_progress;
 };
 
 int dnet_socket_local_addr(int s, struct dnet_addr *addr);
@@ -418,6 +452,7 @@ void dnet_check_io_pool(struct dnet_io_pool *io, uint64_t *queue_size, uint64_t 
 
 struct dnet_backends_manager;
 struct dnet_io_pools_manager;
+struct n2_old_protocol_io;
 struct dnet_io {
 	int			need_exit;
 
@@ -436,6 +471,8 @@ struct dnet_io {
 	int			blocked;
 
 	struct list_stat	output_stats;
+
+	struct n2_old_protocol_io	*old_protocol;
 };
 
 int dnet_state_accept_process(struct dnet_net_state *st, struct epoll_event *ev);
@@ -447,6 +484,10 @@ void dnet_io_stop(struct dnet_node *n);
 void dnet_io_cleanup(struct dnet_node *n);
 
 void dnet_io_req_free(struct dnet_io_req *r);
+
+void n2_io_req_enqueue_net(struct dnet_net_state *st, struct dnet_io_req *r);
+
+void n2_iovec_free(struct n2_net_iovec *iov);
 
 struct dnet_config_data {
 	int cfg_addr_num;
@@ -658,12 +699,18 @@ int __attribute__((weak)) dnet_process_cmd_raw(struct dnet_net_state *st,
                                                int recursive,
                                                long queue_time,
                                                struct dnet_access_context *context);
+int __attribute__((weak)) n2_process_cmd_raw(struct dnet_net_state *st,
+                                             struct n2_request_info *req_info,
+                                             int recursive,
+                                             long queue_time,
+                                             struct dnet_access_context *context);
 int dnet_process_recv(struct dnet_net_state *st, struct dnet_io_req *r);
 void dnet_trans_update_timestamp(struct dnet_trans *t);
 
 int dnet_sendfile(struct dnet_net_state *st, int fd, uint64_t *offset, uint64_t size);
 
 int dnet_send_request(struct dnet_net_state *st, struct dnet_io_req *r);
+int n2_send_request(struct dnet_net_state *st, struct dnet_io_req *r);
 
 
 int __attribute__((weak)) dnet_send_ack(struct dnet_net_state *st,
@@ -724,6 +771,9 @@ struct dnet_trans
 	int				(* complete)(struct dnet_addr *addr,
 						     struct dnet_cmd *cmd,
 						     void *priv);
+	int				(* n2_complete)(struct dnet_addr *addr,
+					                struct n2_response_info *response_info,
+        				                void *priv);
 
 	struct dnet_trans_stats		stats;
 };
@@ -762,6 +812,7 @@ int dnet_state_reset_nolock_noclean(struct dnet_net_state *st, int error, struct
 int dnet_trans_send(struct dnet_trans *t, struct dnet_io_req *req);
 
 int dnet_trans_forward(struct dnet_io_req *r, struct dnet_net_state *orig, struct dnet_net_state *forward);
+int n2_trans_forward(struct n2_request_info *request_info, struct dnet_net_state *orig, struct dnet_net_state *forward);
 
 int dnet_recv_list(struct dnet_node *n, struct dnet_net_state *st);
 

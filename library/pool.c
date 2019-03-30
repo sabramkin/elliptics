@@ -35,9 +35,11 @@
 #include "elliptics/interface.h"
 #include "monitor/monitor.h"
 #include "monitor/measure_points.h"
+#include "pool_impl.h"
 #include "request_queue.h"
 #include "library/logger.hpp"
 #include "library/backend.h"
+#include "library/old_protocol/old_protocol.h"
 
 static char *dnet_work_io_mode_string[] = {
 	[DNET_WORK_IO_MODE_BLOCKING] = "BLOCKING",
@@ -276,10 +278,28 @@ static inline void make_thread_stat_id(char *buffer, int size, struct dnet_work_
 	snprintf(buffer, size - 1, "%s.%s", pool->pool_id, mode_marker);
 }
 
+struct dnet_cmd *dnet_io_req_get_cmd(struct dnet_io_req *r) {
+	if (r->io_req_type == DNET_IO_REQ_OLD_PROTOCOL)
+		// dnet_io_req enqueued from old mechanic
+		return r->header;
+	else
+		// dnet_io_req enqueued from protocol-independent mechanic
+		return n2_io_req_get_cmd(r);
+}
+
+struct dnet_cmd *dnet_io_req_get_request_cmd_inplace(struct dnet_io_req *r) {
+	if (r->io_req_type == DNET_IO_REQ_OLD_PROTOCOL)
+		// dnet_io_req enqueued from old mechanic
+		return r->header;
+	else
+		// dnet_io_req enqueued from protocol-independent mechanic
+		return n2_io_req_get_request_cmd_inplace(r);
+}
+
 static void dnet_update_trans_timestamp_network(struct dnet_io_req *r)
 {
 	struct dnet_net_state *st = r->st;
-	struct dnet_cmd *cmd = r->header;
+	struct dnet_cmd *cmd = dnet_io_req_get_cmd(r);
 
 	if (cmd->flags & DNET_FLAGS_REPLY) {
 		struct dnet_trans *t;
@@ -306,7 +326,7 @@ void dnet_schedule_io(struct dnet_node *n, struct dnet_io_req *r)
 {
 	struct dnet_work_pool_place *place = NULL;
 	struct dnet_work_pool *pool = NULL;
-	struct dnet_cmd *cmd = r->header;
+	struct dnet_cmd *cmd = dnet_io_req_get_cmd(r);
 	int nonblocking = !!(cmd->flags & DNET_FLAGS_NOLOCK);
 	ssize_t backend_id = -1;
 	char thread_stat_id[255];
@@ -352,11 +372,12 @@ void dnet_schedule_io(struct dnet_node *n, struct dnet_io_req *r)
 
 	// If we are processing the command we should update cmd->backend_id to actual one
 	if (!(cmd->flags & DNET_FLAGS_REPLY)) {
-		cmd->backend_id = backend_id >= 0 ? backend_id : -1;
+		struct dnet_cmd *cmd_inplace = dnet_io_req_get_request_cmd_inplace(r);
+		cmd_inplace->backend_id = backend_id >= 0 ? backend_id : -1;
 	}
 
 	dnet_log(n, DNET_LOG_DEBUG, "%s: %s: backend_id: %zd, place: %p, cmd->backend_id: %d",
-	         dnet_state_dump_addr(r->st), dnet_dump_id(r->header), backend_id, place, cmd->backend_id);
+	         dnet_state_dump_addr(r->st), dnet_dump_id(&cmd->id), backend_id, place, cmd->backend_id);
 
 	dnet_push_request(pool, r, thread_stat_id);
 
@@ -366,7 +387,6 @@ void dnet_schedule_io(struct dnet_node *n, struct dnet_io_req *r)
 	FORMATTED(HANDY_COUNTER_INCREMENT, ("pool.%s.queue.size", thread_stat_id), 1);
 	HANDY_COUNTER_INCREMENT("io.input.queue.size", 1);
 }
-
 
 void dnet_schedule_command(struct dnet_net_state *st)
 {
@@ -454,6 +474,14 @@ again:
 				dnet_dump_id(&c->id), dnet_cmd_string(c->cmd), tid,
 				dnet_state_dump_addr(st), c->backend_id,
 				(unsigned long long)c->size, dnet_flags_dump_cflags(c->flags), c->status);
+
+		// Protocol-independent mechanic. Note that net bytes order in dnet_cmd *c is already violated
+		err = n2_old_protocol_recv_body(c, st);
+		if (err != -ENOTSUP) {
+			goto out;
+		}
+
+		// NOTE: Code below is serving protocol-embedded (old) mechanic
 
 		r = malloc(c->size + sizeof(struct dnet_cmd) + sizeof(struct dnet_io_req));
 		if (!r) {
@@ -669,8 +697,9 @@ static int dnet_process_send_single(struct dnet_net_state *st)
 			goto err_out_exit;
 		}
 
-		err = dnet_send_request(st, r);
-		if (st->send_offset == (r->dsize + r->hsize + r->fsize)) {
+		err = r->iov ? n2_send_request(st, r) : dnet_send_request(st, r);
+
+		if (!err) {
 			pthread_mutex_lock(&st->send_lock);
 			list_del(&r->req_entry);
 			pthread_mutex_unlock(&st->send_lock);
@@ -1041,20 +1070,20 @@ void *dnet_io_process(void *data_) {
 		FORMATTED(HANDY_COUNTER_INCREMENT, ("pool.%s.active_threads", thread_stat_id), 1);
 
 		st = r->st;
-		cmd = r->header;
+		cmd = dnet_io_req_get_cmd(r);
 
 		dnet_logger_set_backend_id(cmd->backend_id);
 		dnet_logger_set_trace_id(cmd->trace_id, cmd->flags & DNET_FLAGS_TRACE_BIT);
 
 		dnet_log(n, DNET_LOG_DEBUG, "%s: %s: got IO event: %p: cmd: %s, hsize: %zu, dsize: %zu, mode: %s, "
 		                            "backend_id: %d, queue_time: %lu usecs",
-		         dnet_state_dump_addr(st), dnet_dump_id(r->header), r, dnet_cmd_string(cmd->cmd), r->hsize,
+		         dnet_state_dump_addr(st), dnet_dump_id(&cmd->id), r, dnet_cmd_string(cmd->cmd), r->hsize,
 		         r->dsize, dnet_work_io_mode_str(pool->mode), cmd->backend_id, r->queue_time);
 
 		dnet_process_recv(st, r);
 
 		dnet_log(n, DNET_LOG_DEBUG, "%s: %s: processed IO event: %p, cmd: %s", dnet_state_dump_addr(st),
-		         dnet_dump_id(r->header), r, dnet_cmd_string(cmd->cmd));
+		         dnet_dump_id(&cmd->id), r, dnet_cmd_string(cmd->cmd));
 
 		dnet_release_request(wio, r);
 		dnet_io_req_free(r);
@@ -1126,6 +1155,11 @@ int dnet_io_init(struct dnet_node *n, struct dnet_config *cfg)
 		goto err_out_cleanup_recv_place_nb;
 	}
 
+	err = n2_old_protocol_io_start(n);
+	if (err) {
+		goto err_out_free_recv_pool_nb;
+	}
+
 	for (i=0; i<n->io->net_thread_num; ++i) {
 		struct dnet_net_io *nio = &n->io->net[i];
 
@@ -1159,6 +1193,8 @@ err_out_net_destroy:
 		close(n->io->net[i].epoll_fd);
 	}
 
+err_out_free_recv_pool_nb:
+	n->need_exit = 1;
 	dnet_work_pool_exit(&n->io->pool.recv_pool_nb);
 err_out_cleanup_recv_place_nb:
 	dnet_work_pool_place_cleanup(&n->io->pool.recv_pool_nb);
@@ -1188,6 +1224,8 @@ void dnet_io_stop(struct dnet_node *n) {
 		pthread_join(io->net[i].tid, NULL);
 		close(io->net[i].epoll_fd);
 	}
+
+	n2_old_protocol_io_stop(n);
 
 	dnet_work_pool_stop(&io->pool.recv_pool_nb);
 	dnet_work_pool_stop(&io->pool.recv_pool);

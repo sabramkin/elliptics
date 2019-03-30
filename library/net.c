@@ -36,6 +36,7 @@
 #include "elliptics.h"
 #include "elliptics/packet.h"
 #include "elliptics/interface.h"
+#include "n2_protocol.h"
 
 #include "monitor/measure_points.h"
 #include "library/logger.hpp"
@@ -183,6 +184,8 @@ void dnet_state_clean(struct dnet_net_state *st)
  * is set to 1) we need to allocate buffer and read fd content info this buffer.
  * Result should looks exactly as if was read from network socket. This CPU IO time is spent
  * in backend's IO pool.
+ *
+ * NOTE: This function is called only by protocol-embedded (old) mechanic
  */
 static struct dnet_io_req *dnet_io_req_copy(struct dnet_net_state *st, struct dnet_io_req *orig, int bypass)
 {
@@ -328,14 +331,49 @@ err_out_exit:
 	return err;
 }
 
+void n2_io_req_enqueue_net(struct dnet_net_state *st, struct dnet_io_req *r)
+{
+	clock_gettime(CLOCK_MONOTONIC_RAW, &r->queue_start_ts);
+
+	pthread_mutex_lock(&st->send_lock);
+	list_add_tail(&r->req_entry, &st->send_list);
+
+	if (!st->__need_exit)
+		dnet_schedule_send(st);
+	pthread_mutex_unlock(&st->send_lock);
+
+	pthread_mutex_lock(&st->n->io->full_lock);
+	list_stat_size_increase(&st->n->io->output_stats, 1);
+	pthread_mutex_unlock(&st->n->io->full_lock);
+	HANDY_COUNTER_INCREMENT("io.output.queue.size", 1);
+}
+
 void dnet_io_req_free(struct dnet_io_req *r)
 {
-	if (r->fd >= 0 && r->fsize) {
-		if (r->on_exit & DNET_IO_REQ_FLAGS_CACHE_FORGET)
-			posix_fadvise(r->fd, r->local_offset, r->fsize, POSIX_FADV_DONTNEED);
-		if (r->on_exit & DNET_IO_REQ_FLAGS_CLOSE)
-			close(r->fd);
+	// If r represents message in request queue
+	switch (r->io_req_type) {
+	case DNET_IO_REQ_OLD_PROTOCOL:
+		if (r->fd >= 0 && r->fsize) {
+			if (r->on_exit & DNET_IO_REQ_FLAGS_CACHE_FORGET)
+				posix_fadvise(r->fd, r->local_offset, r->fsize, POSIX_FADV_DONTNEED);
+			if (r->on_exit & DNET_IO_REQ_FLAGS_CLOSE)
+				close(r->fd);
+		}
+		break;
+
+	case DNET_IO_REQ_TYPED_REQUEST:
+		n2_request_info_free(r->request_info);
+		break;
+
+	case DNET_IO_REQ_TYPED_RESPONSE:
+		n2_response_info_free(r->response_info);
+		break;
 	}
+
+	// If r represents message in send_list of old_protocol's new mechanic
+	if (r->iov)
+		n2_iovec_free(r->iov);
+
 	dnet_access_access_put(r->context);
 	free(r);
 }
@@ -599,7 +637,7 @@ static int dnet_process_reply(struct dnet_net_state *st, struct dnet_io_req *r) 
 	int err = 0;
 	struct dnet_node *n = st->n;
 	struct dnet_trans *t = NULL;
-	struct dnet_cmd *cmd = r->header;
+	struct dnet_cmd *cmd = dnet_io_req_get_cmd(r);
 	uint64_t tid = cmd->trans;
 	uint64_t flags = cmd->flags;
 
@@ -636,11 +674,11 @@ static int dnet_process_reply(struct dnet_net_state *st, struct dnet_io_req *r) 
 	}
 
 	++t->stats.recv_replies;
-	t->stats.recv_size += r->hsize + r->dsize + r->fsize;
+	t->stats.recv_size += sizeof(struct dnet_cmd) + cmd->size; // TODO: replace protocol-dependent behavior
 	t->stats.recv_queue_time += r->queue_time;
 	t->stats.recv_time += r->recv_time;
 
-	if (t->complete) {
+	if (t->complete || t->n2_complete) {
 		if (t->command == DNET_CMD_READ || t->command == DNET_CMD_READ_NEW) {
 			uint64_t ioflags = 0;
 			if ((t->command == DNET_CMD_READ) &&
@@ -671,7 +709,10 @@ static int dnet_process_reply(struct dnet_net_state *st, struct dnet_io_req *r) 
 				dnet_update_backend_weight(st, cmd, ioflags, diff);
 			}
 		}
-		t->complete(dnet_state_addr(t->st), cmd, t->priv);
+
+		r->io_req_type == DNET_IO_REQ_OLD_PROTOCOL
+			? t->complete(dnet_state_addr(t->st), cmd, t->priv)
+			: t->n2_complete(dnet_state_addr(t->st), r->response_info, t->priv);
 	}
 
 	if (!(flags & DNET_FLAGS_MORE)) {
@@ -702,7 +743,7 @@ int dnet_process_recv(struct dnet_net_state *st, struct dnet_io_req *r) {
 	int err = 0;
 	struct dnet_node *n = st->n;
 	struct dnet_net_state *forward_state = NULL;
-	struct dnet_cmd *cmd = r->header;
+	struct dnet_cmd *cmd = dnet_io_req_get_cmd(r);
 	struct dnet_access_context *context = NULL;
 
 	if (cmd->flags & DNET_FLAGS_REPLY) {
@@ -736,12 +777,17 @@ int dnet_process_recv(struct dnet_net_state *st, struct dnet_io_req *r) {
 
 		dnet_access_context_add_string(context, "access", "server");
 		HANDY_COUNTER_INCREMENT("io.cmds", 1);
-		err = dnet_process_cmd_raw(st, cmd, r->data, 0, r->queue_time, context);
+
+		err = r->io_req_type == DNET_IO_REQ_OLD_PROTOCOL
+			? dnet_process_cmd_raw(st, cmd, r->data, 0, r->queue_time, context)
+			: n2_process_cmd_raw(st, r->request_info, 0, r->queue_time, context);
 	} else {
 		dnet_access_context_add_string(context, "access", "server/forward");
 		dnet_access_context_add_string(context, "forward", dnet_state_dump_addr(forward_state));
 		HANDY_COUNTER_INCREMENT("io.forwards", 1);
-		err = dnet_trans_forward(r, st, forward_state);
+		err = r->io_req_type == DNET_IO_REQ_OLD_PROTOCOL
+			? dnet_trans_forward(r, st, forward_state)
+			: n2_trans_forward(r->request_info, st, forward_state);
 		if (err)
 			goto err_out_put_forward;
 
@@ -1299,6 +1345,7 @@ void dnet_state_destroy(struct dnet_net_state *st)
 	free(st);
 }
 
+// NOTE: This function is called only by protocol-embedded (old) mechanic
 int dnet_send_request(struct dnet_net_state *st, struct dnet_io_req *r)
 {
 	int cork;
