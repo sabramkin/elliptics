@@ -26,6 +26,8 @@ nodes_data::ptr configure_test_setup(const std::string &path) {
 	return start_nodes(config);
 }
 
+// TODO(sabramkin): add test for lookup with data, to check n2::lookup_request deserialization
+
 void test_forward_lookup(ioremap::elliptics::newapi::session &session, const nodes_data *setup) {
 	auto s = session.clone();
 	s.set_groups({1, 2, 3});
