@@ -7,6 +7,7 @@
 
 namespace ioremap { namespace elliptics { namespace n2 {
 
+// TODO(sabramkin): add comment what is it
 class replier_base {
 public:
 	replier_base(const char *handler_name, dnet_net_state *st, const dnet_cmd &cmd);
@@ -26,6 +27,7 @@ private:
 	dnet_cmd cmd_;
 };
 
+// TODO(sabramkin): add comment what is it
 class request_translator_base {
 public:
 	explicit request_translator_base(protocol_interface::on_request_t &on_request);
