@@ -371,8 +371,8 @@ void dnet_io_req_free(struct dnet_io_req *r)
 	}
 
 	// If r represents message in send_list of old_protocol's new mechanic
-	if (r->iov)
-		n2_iovec_free(r->iov);
+	if (r->serialized)
+		n2_serialized_free(r->serialized);
 
 	dnet_access_access_put(r->context);
 	free(r);

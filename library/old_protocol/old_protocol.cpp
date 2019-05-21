@@ -53,16 +53,16 @@ int old_protocol::recv_message(dnet_cmd *cmd, dnet_net_state *st) {
 		auto &repliers = it->second;
 
 		if (cmd->status) {
-			repliers.on_reply_error(cmd->status);
+			err = repliers.on_reply_error(cmd->status);
 
 		} else {
 			switch (cmd->cmd) {
 			case DNET_CMD_LOOKUP_NEW:
-				repliers.on_reply(deserialize_lookup_response(std::move(message_buffer)));
+				err = repliers.on_reply(deserialize_lookup_response(*cmd, std::move(message_buffer)));
 				break;
 			default:
 				// Must never reach this code, due to is_supported_message() filter called before
-				return -ENOTSUP;
+				err = -ENOTSUP;
 			}
 		}
 
@@ -71,15 +71,15 @@ int old_protocol::recv_message(dnet_cmd *cmd, dnet_net_state *st) {
 	} else {
 		switch (cmd->cmd) {
 		case DNET_CMD_LOOKUP_NEW:
-			lookup_request_translator_.translate_request(st, std::move(message_buffer));
+			lookup_request_translator_.translate_request(st, *cmd);
 			break;
 		default:
 			// Must never reach this code, due to is_supported_message() filter called before
-			return -ENOTSUP;
+			err = -ENOTSUP;
 		}
 	}
 
-	return 0;
+	return err;
 
 	// Some additional actions are done in caller: at pool.c/dnet_process_recv_single/label 'out'.
 }
@@ -102,38 +102,35 @@ bool old_protocol::is_supported_message(dnet_cmd *cmd, dnet_net_state *st) {
 int old_protocol::continue_read_message_after_cmd(dnet_cmd *cmd,
                                                   dnet_net_state *st,
                                                   data_pointer &message_buffer) {
-	message_buffer = data_pointer::allocate(sizeof(dnet_cmd) + cmd->size);
+	if (cmd->size == 0)
+		return 0;
 
-	memcpy(message_buffer.data(), cmd, sizeof(dnet_cmd));
-	// Restore net bytes order, to have virgin net packet in message_buffer
-	dnet_convert_cmd(message_buffer.data<dnet_cmd>());
+	message_buffer = data_pointer::allocate(cmd->size);
 
-	if (cmd->size) {
-		char *read_ptr = message_buffer.skip(sizeof(dnet_cmd)).data<char>();
-		size_t read_size = cmd->size;
+	char *read_ptr = message_buffer.data<char>();
+	size_t read_size = cmd->size;
 
-		while (read_size) {
-			int recv_result = recv(st->read_s, read_ptr, read_size, 0);
+	while (read_size) {
+		int recv_result = recv(st->read_s, read_ptr, read_size, 0);
 
-			if (recv_result < 0) {
-				if (errno != EAGAIN && errno != EINTR) {
-					DNET_LOG_ERROR(st->n, "%s: failed to receive data, socket: %d/%d", dnet_state_dump_addr(st),
-						       st->read_s, st->write_s);
-					return -errno;
-				}
-
-				return -EAGAIN;
+		if (recv_result < 0) {
+			if (errno != EAGAIN && errno != EINTR) {
+				DNET_LOG_ERROR(st->n, "%s: failed to receive data, socket: %d/%d", dnet_state_dump_addr(st),
+					       st->read_s, st->write_s);
+				return -errno;
 			}
 
-			if (recv_result == 0) {
-				DNET_LOG_ERROR(st->n, "%s: peer has disconnected, socket: %d/%d",
-					       dnet_state_dump_addr(st), st->read_s, st->write_s);
-				return -ECONNRESET;
-			}
-
-			read_ptr += recv_result;
-			read_size -= recv_result;
+			return -EAGAIN;
 		}
+
+		if (recv_result == 0) {
+			DNET_LOG_ERROR(st->n, "%s: peer has disconnected, socket: %d/%d",
+				       dnet_state_dump_addr(st), st->read_s, st->write_s);
+			return -ECONNRESET;
+		}
+
+		read_ptr += recv_result;
+		read_size -= recv_result;
 	}
 
 	return 0;

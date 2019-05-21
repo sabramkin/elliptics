@@ -366,27 +366,22 @@ int blob_file_info_new(eblob_backend_config *c, void *state, struct n2_request_i
 	DNET_LOG_INFO(c->blog, "{}: EBLOB: blob-file-info-new: fd: {}, json_size: {}, data_size: {}",
 	              dnet_dump_id(&cmd->id), wc.data_fd, json_size, data_size);
 
-	auto reply = [&] {
-		std::unique_ptr<n2::lookup_response>
-			response(new n2::lookup_response(request->cmd,
-							 wc.flags, // record_flags
-							 ehdr.flags, // user_flags
-							 std::move(filename), // path
-							 jhdr.timestamp, // json_timestamp
-							 wc.data_offset + json_offset, // json_offset
-							 json_size, // json_size
-							 jhdr.capacity, // json_capacity
-							 std::move(json_checksum), // json_checksum
-							 ehdr.timestamp, // data_timestamp
-							 wc.data_offset + data_offset, // data_offset
-							 data_size, // data_size
-							 std::move(data_checksum))); // data_checksum
+	std::unique_ptr<n2::lookup_response>
+		response(new n2::lookup_response(request->cmd,
+						 wc.flags, // record_flags
+						 ehdr.flags, // user_flags
+						 std::move(filename), // path
+						 jhdr.timestamp, // json_timestamp
+						 wc.data_offset + json_offset, // json_offset
+						 json_size, // json_size
+						 jhdr.capacity, // json_capacity
+						 std::move(json_checksum), // json_checksum
+						 ehdr.timestamp, // data_timestamp
+						 wc.data_offset + data_offset, // data_offset
+						 data_size, // data_size
+						 std::move(data_checksum))); // data_checksum
 
-		req_info->repliers.on_reply(std::move(response));
-		return 0;
-	};
-
-	return c_exception_guard(reply, c->blog, __FUNCTION__);
+	return req_info->repliers.on_reply(std::move(response));
 }
 
 static int blob_del_new_cas(eblob_backend_config *c, eblob_backend *b, const dnet_cmd *cmd, eblob_key &key,

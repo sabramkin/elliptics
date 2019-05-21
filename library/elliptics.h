@@ -58,7 +58,7 @@ struct dnet_group;
 struct dnet_net_state;
 struct dnet_cmd_stats;
 struct dnet_access_context;
-struct n2_net_iovec;
+struct n2_serialized;
 struct n2_request_info;
 struct n2_response_info;
 
@@ -101,7 +101,7 @@ struct dnet_io_req {
 	// and send_list. Send_list is protocol-specific and contains serialized messages which are ready to
 	// send by net. On transitional period we keep old send_list, but store serialized data in new substructure.
 	// TODO: move it to protocol-specific send_list when protocol logic'll be fully extracted
-	struct n2_net_iovec		*iov;
+	struct n2_serialized		*serialized;
 
 };
 
@@ -487,7 +487,7 @@ void dnet_io_req_free(struct dnet_io_req *r);
 
 void n2_io_req_enqueue_net(struct dnet_net_state *st, struct dnet_io_req *r);
 
-void n2_iovec_free(struct n2_net_iovec *iov);
+void n2_serialized_free(struct n2_serialized *serialized);
 
 struct dnet_config_data {
 	int cfg_addr_num;

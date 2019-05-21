@@ -19,10 +19,11 @@ struct n2_request : n2_message {
 };
 
 // Group of ways to reply on request. Some of replies can be unimplemented, depending on handler.
-// n2_repliers::on_reply_error is always implemented
+// n2_repliers::on_reply_error is always implemented. Any replier returns error code. When client side
+// implements its replier, its error code is ignored.
 struct n2_repliers {
-	std::function<void (std::unique_ptr<n2_message>)> on_reply;
-	std::function<void (int)> on_reply_error;
+	std::function<int (std::unique_ptr<n2_message>)> on_reply;
+	std::function<int (int)> on_reply_error;
 	// TODO: add streaming repliers
 };
 

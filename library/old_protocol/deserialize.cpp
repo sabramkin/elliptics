@@ -64,28 +64,15 @@ void unpack(const data_pointer &data, T &value, size_t &length_of_packed) {
 	msg.get().convert(&value);
 }
 
-dnet_cmd deserialize_error_response(data_pointer &&message_buffer) {
-	auto cmd = static_cast<dnet_cmd *>(message_buffer.data());
-	dnet_convert_cmd(cmd);
-
-	return *cmd;
+std::unique_ptr<lookup_request> deserialize_lookup_request(const dnet_cmd &cmd) {
+	return std::unique_ptr<lookup_request>(new lookup_request(cmd));
 }
 
-std::unique_ptr<lookup_request> deserialize_lookup_request(data_pointer &&message_buffer) {
-	auto cmd = static_cast<dnet_cmd *>(message_buffer.data());
-	dnet_convert_cmd(cmd);
-
-	return std::unique_ptr<lookup_request>(new lookup_request(*cmd));
-}
-
-std::unique_ptr<lookup_response> deserialize_lookup_response(data_pointer &&message_buffer) {
-	auto cmd = static_cast<dnet_cmd *>(message_buffer.data());
-	dnet_convert_cmd(cmd);
-
-	std::unique_ptr<lookup_response> msg(new lookup_response(*cmd));
+std::unique_ptr<lookup_response> deserialize_lookup_response(const dnet_cmd &cmd, data_pointer &&message_buffer) {
+	std::unique_ptr<lookup_response> msg(new lookup_response(cmd));
 
 	size_t unused_length_of_packed;
-	unpack(message_buffer.skip(sizeof(dnet_cmd)), *msg, unused_length_of_packed);
+	unpack(message_buffer, *msg, unused_length_of_packed);
 
 	return msg;
 }

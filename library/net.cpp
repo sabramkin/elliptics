@@ -1435,11 +1435,11 @@ int dnet_trans_forward(struct dnet_io_req *r, struct dnet_net_state *orig, struc
 }
 
 // Helper for binding noncopyable to std::function
-template <class TNoncopyable>
-std::function<void ()> n2_bind_noncopyable(std::function<void (TNoncopyable)> func,
+template <class TReturn, class TNoncopyable>
+std::function<TReturn ()> n2_bind_noncopyable(std::function<TReturn (TNoncopyable)> func,
                                            TNoncopyable param) {
-	return [func = std::move(func), param = std::make_shared<TNoncopyable>(std::move(param))]() mutable {
-		func(std::move(*param));
+	return [func = std::move(func), param = std::make_shared<TNoncopyable>(std::move(param))]() mutable -> TReturn {
+		return func(std::move(*param));
 	};
 }
 
@@ -1465,14 +1465,27 @@ n2_repliers n2_make_repliers_via_request_queue(dnet_net_state *st, const dnet_cm
 	};
 
 	n2_repliers repliers_wrappers;
+
 	repliers_wrappers.on_reply_error = [on_reply_error = std::move(repliers.on_reply_error),
-                                            enqueue_response](int errc) {
-		enqueue_response(std::bind(on_reply_error, errc));
+                                            enqueue_response](int errc) -> int {
+		try {
+			enqueue_response(std::bind(on_reply_error, errc));
+			return 0;
+		} catch (std::bad_alloc) {
+			return -ENOMEM;
+		}
 	};
+
 	repliers_wrappers.on_reply = [on_reply = std::move(repliers.on_reply),
-	                              enqueue_response](std::unique_ptr<n2_message> msg) {
-		enqueue_response(n2_bind_noncopyable(on_reply, std::move(msg)));
+	                              enqueue_response](std::unique_ptr<n2_message> msg) -> int {
+		try {
+			enqueue_response(n2_bind_noncopyable(on_reply, std::move(msg)));
+			return 0;
+		} catch (std::bad_alloc) {
+			return -ENOMEM;
+		}
 	};
+
 	return repliers_wrappers;
 }
 
@@ -1586,8 +1599,7 @@ int n2_send_error_response(struct dnet_net_state *st,
                            int errc,
                            struct dnet_access_context *context) {
 	auto impl = [&] {
-		req_info->repliers.on_reply_error(errc);
-		return 0;
+		return req_info->repliers.on_reply_error(errc);
 	};
 	return c_exception_guard(impl, st->n, __FUNCTION__);
 }
@@ -1597,22 +1609,28 @@ public:
 	explicit cork_guard_t(int write_socket)
 	: write_socket_(write_socket)
 	{
-		ser_cork(1);
+		set_cork(1);
 	}
 
 	~cork_guard_t() {
-		ser_cork(0);
+		set_cork(0);
 	}
 
 private:
-	void ser_cork(int cork) {
+	void set_cork(int cork) {
 		setsockopt(write_socket_, IPPROTO_TCP, TCP_CORK, &cork, 4);
 	}
 
 	const int write_socket_;
 };
 
-int n2_send_request_impl(struct dnet_net_state *st, struct dnet_io_req *r) {
+static int n2_send_cmd(dnet_net_state *st, dnet_cmd *cmd) {
+	return dnet_send_nolock(st,
+	                        reinterpret_cast<char *>(cmd) + st->send_offset,
+	                        sizeof(dnet_cmd) - st->send_offset);
+}
+
+static int n2_send_request_impl(dnet_net_state *st, dnet_io_req *r) {
 	using namespace ioremap::elliptics;
 
 	if (st->send_offset == 0) {
@@ -1622,58 +1640,69 @@ int n2_send_request_impl(struct dnet_net_state *st, struct dnet_io_req *r) {
 
 	int send_error = 0;
 	uint64_t send_time = 0;
-	const n2::net_iovec &iov = r->iov->iov;
 
-	// In net_iovec dnet_cmd is represented in net bytes order. So here we convert its copy to cpu bytes order,
-	// to have access to some dnet_cmd fields
-	dnet_cmd cmd = *iov.front().data<dnet_cmd>();
-	dnet_convert_cmd(&cmd);
-	
+	const n2_serialized &serialized = *r->serialized;
+	const dnet_cmd &cmd = serialized.cmd;
+
 	uint64_t total_size = sizeof(dnet_cmd) + cmd.size;
 
 	dnet_logger_set_trace_id(cmd.trace_id, cmd.flags & DNET_FLAGS_TRACE_BIT);
-	const enum dnet_log_level level = st->send_offset == 0 ? DNET_LOG_NOTICE : DNET_LOG_DEBUG;
+	enum dnet_log_level level = st->send_offset == 0 ? DNET_LOG_NOTICE : DNET_LOG_DEBUG;
 	DNET_LOG(st->n, level, "%s: %s: sending trans: %lld -> %s/%d: size: %llu, cflags: %s, start-sent: "
 			       "%zd/%zd, send-queue-time: %lu usecs",
 		 dnet_dump_id(&cmd.id), dnet_cmd_string(cmd.cmd), (unsigned long long)cmd.trans,
 		 dnet_addr_string(&st->addr), cmd.backend_id, (unsigned long long)cmd.size,
 		 dnet_flags_dump_cflags(cmd.flags), st->send_offset, total_size, r->queue_time);
 
-	{
+	dnet_cmd cmd_net = cmd;
+	dnet_convert_cmd(&cmd_net);
+
+	if (serialized.chunks.empty()) {
+		send_error = n2_send_cmd(st, &cmd_net);
+
+	} else {
 		cork_guard_t cork_guard(st->write_s);
 
-		size_t current_block_offset = 0;
-
-		for (const auto &dp : iov) {
-			size_t current_block_end_offset = current_block_offset + dp.size();
-			if (st->send_offset < current_block_end_offset) /*block hasn't sent*/ {
-				auto dp_left = dp.skip(st->send_offset - current_block_offset);
-				send_error = dnet_send_nolock(st, dp_left.data(), dp_left.size());
-				if (send_error)
-					break;
-			}
-
-			current_block_offset = current_block_end_offset;
+		if (st->send_offset < sizeof(dnet_cmd)) {
+			send_error = n2_send_cmd(st, &cmd_net);
 		}
 
-		// Logging block
-		struct timespec ts;
-		clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
-		send_time = DIFF_TIMESPEC(st->send_start_ts, ts);
-		enum dnet_log_level level = DNET_LOG_DEBUG;
 		if (!send_error) {
-			level = !(cmd.flags & DNET_FLAGS_MORE) ? DNET_LOG_INFO : DNET_LOG_NOTICE;
-			dnet_access_context_add_uint(r->context, "send_time", send_time);
-			dnet_access_context_add_uint(r->context, "send_queue_time", r->queue_time);
-			dnet_access_context_add_uint(r->context, "response_size", total_size);
+			size_t current_block_offset = sizeof(dnet_cmd);
+
+			for (const auto &dp : serialized.chunks) {
+				size_t current_block_end_offset = current_block_offset + dp.size();
+				if (st->send_offset < current_block_end_offset) /*block hasn't sent*/ {
+					auto dp_left = dp.skip(st->send_offset - current_block_offset);
+					send_error = dnet_send_nolock(st, dp_left.data(), dp_left.size());
+					if (send_error)
+						break;
+				}
+
+				current_block_offset = current_block_end_offset;
+			}
 		}
-		DNET_LOG(st->n, level, "%s: %s: sending trans: %lld -> %s/%d: size: %llu, cflags: %s, finish-sent: "
-				       "%zd/%zd, send-queue-time: %lu usecs, send-time: %lu usecs",
-			 dnet_dump_id(&cmd.id), dnet_cmd_string(cmd.cmd), (unsigned long long)cmd.trans,
-			 dnet_addr_string(&st->addr), cmd.backend_id, (unsigned long long)cmd.size,
-			 dnet_flags_dump_cflags(cmd.flags), st->send_offset, total_size, r->queue_time, send_time);
-		dnet_logger_unset_trace_id();
 	}
+
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+	send_time = DIFF_TIMESPEC(st->send_start_ts, ts);
+	level = DNET_LOG_DEBUG;
+	if (!send_error) {
+		level = !(cmd.flags & DNET_FLAGS_MORE) ? DNET_LOG_INFO : DNET_LOG_NOTICE;
+		if (r->context) {
+			r->context->add({{"send_time", send_time},
+					 {"send_queue_time", r->queue_time},
+					 {"response_size", total_size},
+					});
+		}
+	}
+	DNET_LOG(st->n, level, "%s: %s: sending trans: %lld -> %s/%d: size: %llu, cflags: %s, finish-sent: "
+			       "%zd/%zd, send-queue-time: %lu usecs, send-time: %lu usecs",
+		 dnet_dump_id(&cmd.id), dnet_cmd_string(cmd.cmd), (unsigned long long)cmd.trans,
+		 dnet_addr_string(&st->addr), cmd.backend_id, (unsigned long long)cmd.size,
+		 dnet_flags_dump_cflags(cmd.flags), st->send_offset, total_size, r->queue_time, send_time);
+	dnet_logger_unset_trace_id();
 
 	/*
 	 * Flush TCP output pipeline if we've sent whole request.

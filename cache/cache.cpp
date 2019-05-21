@@ -560,27 +560,22 @@ static int dnet_cmd_cache_io_lookup_new(struct cache_manager *cache,
 		}
 	}
 
-	auto reply = [&] {
-		std::unique_ptr<n2::lookup_response>
-			response(new n2::lookup_response(request->cmd,
-							 0, // record_flags
-							 it.user_flags, // user_flags
-							 std::string(), // path
-							 it.json_timestamp, // json_timestamp
-							 0, // json_offset
-							 it.json->size(), // json_size
-							 it.json->size(), // json_capacity
-							 std::move(json_checksum), // json_checksum
-							 it.timestamp, // data_timestamp
-							 0, // data_offset
-							 it.data->size(), // data_size
-							 std::move(data_checksum))); // data_checksum
+	std::unique_ptr<n2::lookup_response>
+		response(new n2::lookup_response(request->cmd,
+						 0, // record_flags
+						 it.user_flags, // user_flags
+						 std::string(), // path
+						 it.json_timestamp, // json_timestamp
+						 0, // json_offset
+						 it.json->size(), // json_size
+						 it.json->size(), // json_capacity
+						 std::move(json_checksum), // json_checksum
+						 it.timestamp, // data_timestamp
+						 0, // data_offset
+						 it.data->size(), // data_size
+						 std::move(data_checksum))); // data_checksum
 
-		req_info->repliers.on_reply(std::move(response));
-		return 0;
-	};
-
-	return c_exception_guard(reply, st->n, __FUNCTION__);
+	return req_info->repliers.on_reply(std::move(response));
 }
 
 static int dnet_cmd_cache_io_remove(struct cache_manager *cache,

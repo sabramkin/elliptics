@@ -697,7 +697,7 @@ static int dnet_process_send_single(struct dnet_net_state *st)
 			goto err_out_exit;
 		}
 
-		err = r->iov ? n2_send_request(st, r) : dnet_send_request(st, r);
+		err = r->serialized ? n2_send_request(st, r) : dnet_send_request(st, r);
 
 		if (!err) {
 			pthread_mutex_lock(&st->send_lock);

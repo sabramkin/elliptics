@@ -1,8 +1,10 @@
 #include "translate_request.hpp"
 
+#include <blackhole/attribute.hpp>
 #include <msgpack.hpp>
 
 #include "deserialize.hpp"
+#include "library/common.hpp"
 #include "library/elliptics.h"
 
 namespace ioremap { namespace elliptics { namespace n2 {
@@ -14,16 +16,31 @@ replier_base::replier_base(const char *handler_name, dnet_net_state *st, const d
 , cmd_(cmd)
 {}
 
-void replier_base::reply(std::unique_ptr<n2_message> msg) {
-	if (!reply_has_sent_.test_and_set()) {
+int replier_base::reply(std::unique_ptr<n2_message> msg) {
+	auto impl = [&] {
 		msg->cmd.trans = cmd_.trans;
 		reply_impl(std::move(msg));
+		return 0;
+	};
+
+	if (!reply_has_sent_.test_and_set()) {
+		return c_exception_guard(impl, st_->n, __FUNCTION__);
+	} else {
+		return -EALREADY;
 	}
 }
 
-void replier_base::reply_error(int errc) {
-	if (!reply_has_sent_.test_and_set())
+int replier_base::reply_error(int errc) {
+	auto impl = [&] {
 		reply_error_impl(errc);
+		return 0;
+	};
+
+	if (!reply_has_sent_.test_and_set()) {
+		return c_exception_guard(impl, st_->n, __FUNCTION__);
+	} else {
+		return -EALREADY;
+	}
 }
 
 void replier_base::reply_impl(std::unique_ptr<n2_message> msg) {
@@ -65,10 +82,10 @@ lookup_request_translator::lookup_request_translator(protocol_interface::on_requ
 : request_translator_base(on_request)
 {}
 
-void lookup_request_translator::translate_request(dnet_net_state *st, data_pointer message_buffer) {
+void lookup_request_translator::translate_request(dnet_net_state *st, const dnet_cmd &cmd) {
 	std::unique_ptr<n2_request_info> request_info(new n2_request_info);
 
-	request_info->request = deserialize_lookup_request(std::move(message_buffer));
+	request_info->request = deserialize_lookup_request(cmd);
 
 	auto replier = std::make_shared<lookup_replier>(st, request_info->request->cmd);
 	request_info->repliers.on_reply = std::bind(&lookup_replier::reply, replier, std::placeholders::_1);
@@ -79,6 +96,6 @@ void lookup_request_translator::translate_request(dnet_net_state *st, data_point
 
 }}} // namespace ioremap::elliptics::n2
 
-void n2_iovec_free(struct n2_net_iovec *iov) {
-	delete iov;
+void n2_serialized_free(struct n2_serialized *serialized) {
+	delete serialized;
 }
