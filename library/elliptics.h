@@ -106,10 +106,10 @@ struct dnet_io_req {
 };
 
 // Because of variability of dnet_io_req, dnet_cmd can be hold there differently. Here the accessors:
-// * accessor to cmd copy (to read info)
+// * get cmd for reading only
 struct dnet_cmd *dnet_io_req_get_cmd(struct dnet_io_req *r);
-// * direct access to cmd in the request (to patch request's cmd fields)
-struct dnet_cmd *dnet_io_req_get_request_cmd_inplace(struct dnet_io_req *r);
+// * modify backend_id in cmd
+int dnet_io_req_set_request_backend_id(struct dnet_io_req *r, int backend_id);
 
 #define ELLIPTICS_PROTOCOL_VERSION_0 2
 #define ELLIPTICS_PROTOCOL_VERSION_1 26

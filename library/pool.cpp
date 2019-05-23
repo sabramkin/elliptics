@@ -19,11 +19,17 @@ struct dnet_cmd *n2_io_req_get_cmd(struct dnet_io_req *r) {
 	}
 }
 
-struct dnet_cmd *n2_io_req_get_request_cmd_inplace(struct dnet_io_req *r) {
-	if (r->io_req_type == DNET_IO_REQ_TYPED_REQUEST && r->request_info->request)
-		return &r->request_info->request->cmd;
-	else
-		return nullptr; // Must never reach this code
+int n2_io_req_set_request_backend_id(struct dnet_io_req *r, int backend_id) {
+	if (r->io_req_type == DNET_IO_REQ_TYPED_REQUEST && r->request_info->request) {
+		// TODO: maybe to have shared_ptr on cmd and not to have two copies?
+		// Modify read-only long-lived cmd info
+		r->request_info->cmd.backend_id = backend_id;
+		// Modify cmd info within request
+		r->request_info->request->cmd.backend_id = backend_id;
+		return 0;
+	} else {
+		return -EINVAL;
+	}
 }
 
 } // extern "C"

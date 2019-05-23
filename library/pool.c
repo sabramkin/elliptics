@@ -287,13 +287,16 @@ struct dnet_cmd *dnet_io_req_get_cmd(struct dnet_io_req *r) {
 		return n2_io_req_get_cmd(r);
 }
 
-struct dnet_cmd *dnet_io_req_get_request_cmd_inplace(struct dnet_io_req *r) {
-	if (r->io_req_type == DNET_IO_REQ_OLD_PROTOCOL)
+int dnet_io_req_set_request_backend_id(struct dnet_io_req *r, int backend_id) {
+	if (r->io_req_type == DNET_IO_REQ_OLD_PROTOCOL) {
 		// dnet_io_req enqueued from old mechanic
-		return r->header;
-	else
+		struct dnet_cmd *cmd = r->header;
+		cmd->backend_id = backend_id;
+		return 0;
+	} else {
 		// dnet_io_req enqueued from protocol-independent mechanic
-		return n2_io_req_get_request_cmd_inplace(r);
+		return n2_io_req_set_request_backend_id(r, backend_id);
+	}
 }
 
 static void dnet_update_trans_timestamp_network(struct dnet_io_req *r)
@@ -372,8 +375,7 @@ void dnet_schedule_io(struct dnet_node *n, struct dnet_io_req *r)
 
 	// If we are processing the command we should update cmd->backend_id to actual one
 	if (!(cmd->flags & DNET_FLAGS_REPLY)) {
-		struct dnet_cmd *cmd_inplace = dnet_io_req_get_request_cmd_inplace(r);
-		cmd_inplace->backend_id = backend_id >= 0 ? backend_id : -1;
+		dnet_io_req_set_request_backend_id(r, backend_id >= 0 ? backend_id : -1);
 	}
 
 	dnet_log(n, DNET_LOG_DEBUG, "%s: %s: backend_id: %zd, place: %p, cmd->backend_id: %d",
