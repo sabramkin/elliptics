@@ -57,6 +57,7 @@ public:
 	using on_request_t = std::function<void (dnet_net_state *st, std::unique_ptr<n2_request_info>)>;
 
 	// Server side
+	// TODO(sabramkin): do it in constructor, remove cmd param
 	virtual void subscribe_request(int cmd, on_request_t on_request) = 0;
 
 	// Client side
