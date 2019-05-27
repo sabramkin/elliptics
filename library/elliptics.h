@@ -58,9 +58,10 @@ struct dnet_group;
 struct dnet_net_state;
 struct dnet_cmd_stats;
 struct dnet_access_context;
-struct n2_serialized;
+struct n2_recv_buffer;
 struct n2_request_info;
 struct n2_response_info;
+struct n2_serialized;
 
 // Define which fields of dnet_io_req are used
 enum dnet_io_req_type {
@@ -217,6 +218,8 @@ struct dnet_net_state
 	struct dnet_net_epoll_data read_data;
 	struct dnet_net_epoll_data write_data;
 	struct dnet_net_epoll_data accept_data;
+
+	struct n2_recv_buffer	*rcv_buffer;
 
 	// Currently we save in-forwarding status, to separate responses addressed to server (from forwarded requests -
 	// we support such a responces) from responses addressed to client (we don't support them yet)

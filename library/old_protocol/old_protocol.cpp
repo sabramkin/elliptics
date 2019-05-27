@@ -175,9 +175,44 @@ int n2_old_protocol_io_stop(struct dnet_node *n) {
 	return c_exception_guard(impl, n, __FUNCTION__);
 }
 
-int n2_old_protocol_recv_body(struct dnet_cmd *cmd, struct dnet_net_state *st) {
+bool n2_old_protocol_is_supported_message(struct dnet_net_state *st) {
+	const dnet_cmd *cmd = &st->rcv_cmd;
+
+	if (cmd->flags & DNET_FLAGS_REPLY) {
+		// TODO(sabramkin): move n2_tmp_forwarding_in_progress flag to transaction descriptor
+		if (st->n2_tmp_forwarding_in_progress) {
+			if (!(cmd->flags & DNET_FLAGS_MORE))
+				st->n2_tmp_forwarding_in_progress = 0;
+
+			return cmd->cmd == DNET_CMD_LOOKUP_NEW;
+		} else {
+			return false;
+		}
+	} else {
+		return cmd->cmd == DNET_CMD_LOOKUP_NEW;
+	}
+}
+
+int n2_old_protocol_try_prepare(struct dnet_net_state *st) {
+	if (!n2_old_protocol_is_supported_message(st))
+		return -ENOTSUP;
+
+	const dnet_cmd *cmd = &st->rcv_cmd;
+
+	st->rcv_buffer = new n2_recv_buffer{ .data = ioremap::elliptics::data_pointer::allocate(cmd->size); };
+
+	st->rcv_data = st->rcv_buffer->data.data();
+	st->rcv_offset = 0;
+	st->rcv_end = cmd->size;
+	return 0;
+}
+
+int n2_old_protocol_schedule_message(struct dnet_net_state *st) {
+	if (!n2_old_protocol_is_supported_message(st))
+		return -ENOTSUP;
+
 	auto impl = [&] {
-		return st->n->io->old_protocol->protocol.recv_message(cmd, st);
+		return st->n->io->old_protocol->protocol.recv_message(st);
 	};
 	return c_exception_guard(impl, st->n, __FUNCTION__);
 }

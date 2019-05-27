@@ -20,8 +20,8 @@ public:
 	                  std::unique_ptr<n2_request> request,
 	                  n2_repliers repliers) override;
 
-	// Back door (receive data from net, called from C)
-	int recv_message(dnet_cmd *cmd, dnet_net_state *st);
+	// Net side
+	int recv_message(dnet_net_state *st, dnet_cmd *message_header, data_pointer &message_body);
 
 private:
 	bool is_supported_message(dnet_cmd *cmd, dnet_net_state *st);
@@ -43,6 +43,10 @@ struct n2_old_protocol_io {
 	n2_old_protocol_io();
 
 	ioremap::elliptics::n2::old_protocol protocol;
+};
+
+struct n2_recv_buffer {
+	ioremap::elliptics::data_pointer buf;
 };
 
 } // extern "C"
