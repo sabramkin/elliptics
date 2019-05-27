@@ -49,16 +49,10 @@ struct n2_response_info {
 namespace ioremap { namespace elliptics { namespace n2 {
 
 // Abstract interface of protocol
-// TODO: Separate server side from client side?
-// TODO: Maybe make each net_state to own its local protocol object? => we can drop dnet_net_state *st param
-// TODO:     from everywhere.
 class protocol_interface {
 public:
-	using on_request_t = std::function<void (dnet_net_state *st, std::unique_ptr<n2_request_info>)>;
-
-	// Server side
-	// TODO(sabramkin): do it in constructor, remove cmd param
-	virtual void subscribe_request(int cmd, on_request_t on_request) = 0;
+	// Must be implemented on server side
+	static int __attribute__((weak)) on_request(dnet_net_state *st, std::unique_ptr<n2_request_info> request_info);
 
 	// Client side
 	virtual void send_request(dnet_net_state *st,

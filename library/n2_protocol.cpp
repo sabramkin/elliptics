@@ -20,6 +20,20 @@ n2_request::n2_request(const dnet_cmd &cmd_, const dnet_time &deadline_)
 
 namespace ioremap { namespace elliptics { namespace n2 {
 
+int protocol_interface::on_request(dnet_net_state *st, std::unique_ptr<n2_request_info> request_info) {
+	auto r = static_cast<dnet_io_req *>(calloc(1, sizeof(dnet_io_req)));
+	if (!r)
+		return -ENOMEM;
+
+	r->io_req_type = DNET_IO_REQ_TYPED_REQUEST;
+	r->request_info = request_info.release();
+
+	r->st = dnet_state_get(st);
+	dnet_schedule_io(st->n, r);
+
+	return 0;
+};
+
 protocol_interface *net_state_get_protocol(dnet_net_state* st) {
 	return &st->n->io->old_protocol->protocol;
 }

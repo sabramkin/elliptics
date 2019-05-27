@@ -220,6 +220,7 @@ struct dnet_net_state
 	struct dnet_net_epoll_data accept_data;
 
 	struct n2_recv_buffer	*rcv_buffer;
+	int rcv_buffer_used;
 
 	// Currently we save in-forwarding status, to separate responses addressed to server (from forwarded requests -
 	// we support such a responces) from responses addressed to client (we don't support them yet)

@@ -10,27 +10,20 @@ namespace ioremap { namespace elliptics { namespace n2 {
 
 class old_protocol : public protocol_interface {
 public:
-	old_protocol();
-
-	// Server side
-	void subscribe_request(int cmd, on_request_t on_request) override;
-
 	// Client side
 	void send_request(dnet_net_state *st,
 	                  std::unique_ptr<n2_request> request,
 	                  n2_repliers repliers) override;
 
 	// Net side
-	int recv_message(dnet_net_state *st, dnet_cmd *message_header, data_pointer &message_body);
+	int recv_message(dnet_net_state *st, const dnet_cmd &cmd, data_pointer &&body);
 
 private:
-	bool is_supported_message(dnet_cmd *cmd, dnet_net_state *st);
-	int continue_read_message_after_cmd(dnet_cmd *cmd,
-	                                    dnet_net_state *st,
-	                                    data_pointer &message_buffer);
+	int recv_request(dnet_net_state *st, const dnet_cmd &cmd, data_pointer &&body);
+	int recv_response(dnet_net_state *st, const dnet_cmd &cmd, data_pointer &&body);
 
-	std::unordered_map<int/*cmd*/, on_request_t> subscribe_table_;
-	lookup_request_translator lookup_request_translator_;
+	int schedule_request_info(dnet_net_state *st, std::unique_ptr<n2_request_info> &&request_info);
+	int translate_lookup_request(dnet_net_state *st, const dnet_cmd &cmd);
 
 	std::unordered_map<uint64_t/*trans_id*/, n2_repliers> repliers_table_;
 };
@@ -40,8 +33,6 @@ private:
 extern "C" {
 
 struct n2_old_protocol_io {
-	n2_old_protocol_io();
-
 	ioremap::elliptics::n2::old_protocol protocol;
 };
 

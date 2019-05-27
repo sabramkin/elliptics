@@ -58,40 +58,12 @@ void replier_base::reply_error_impl(int errc) {
 	enqueue_net(st_, serialize_error_response(cmd));
 }
 
-request_translator_base::request_translator_base(protocol_interface::on_request_t &on_request)
-: on_request_(on_request)
-{}
-
-void request_translator_base::finalize_and_do_callback(dnet_net_state *st,
-                                                       std::unique_ptr<n2_request_info> &&request_info) {
-	request_info->cmd = request_info->request->cmd;
-	on_request_(st, std::move(request_info));
-}
-
-// Lookup request stuff
-
 lookup_replier::lookup_replier(dnet_net_state *st, const dnet_cmd &cmd)
 : replier_base("LOOKUP_NEW", st, cmd)
 {}
 
 void lookup_replier::reply_impl(std::unique_ptr<n2_message> msg) {
 	enqueue_net(st_, serialize_lookup_response(std::move(msg)));
-}
-
-lookup_request_translator::lookup_request_translator(protocol_interface::on_request_t &on_request)
-: request_translator_base(on_request)
-{}
-
-void lookup_request_translator::translate_request(dnet_net_state *st, const dnet_cmd &cmd) {
-	std::unique_ptr<n2_request_info> request_info(new n2_request_info);
-
-	request_info->request = deserialize_lookup_request(cmd);
-
-	auto replier = std::make_shared<lookup_replier>(st, request_info->request->cmd);
-	request_info->repliers.on_reply = std::bind(&lookup_replier::reply, replier, std::placeholders::_1);
-	request_info->repliers.on_reply_error = std::bind(&lookup_replier::reply_error, replier, std::placeholders::_1);
-
-	finalize_and_do_callback(st, std::move(request_info));
 }
 
 }}} // namespace ioremap::elliptics::n2

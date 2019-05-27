@@ -37,6 +37,7 @@
 #include "elliptics/packet.h"
 #include "elliptics/interface.h"
 #include "n2_protocol.h"
+#include "old_protocol/old_protocol.h"
 
 #include "monitor/measure_points.h"
 #include "library/logger.hpp"
@@ -1154,6 +1155,10 @@ struct dnet_net_state *dnet_state_create(struct dnet_node *n,
 			DNET_ERROR(n, "%s: failed to duplicate socket", dnet_addr_string(addr));
 			goto err_out_free;
 		}
+
+		err = n2_old_protocol_rcvbuf_create(st);
+		if (err)
+			goto err_out_free;
 	}
 
 	st->read_data.st = st;
@@ -1265,6 +1270,7 @@ err_out_unlock:
 	pthread_mutex_destroy(&st->trans_lock);
 err_out_dup_destroy:
 	dnet_sock_close(n, st->write_s);
+	n2_old_protocol_rcvbuf_destroy(st);
 err_out_free:
 	free(st);
 err_out_close:
@@ -1329,6 +1335,7 @@ void dnet_state_destroy(struct dnet_net_state *st)
 	}
 
 	dnet_state_clean(st);
+	n2_old_protocol_rcvbuf_destroy(st);
 
 	dnet_state_send_clean(st);
 

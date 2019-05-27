@@ -1,9 +1,11 @@
 #include "deserialize.hpp"
 
+#include <blackhole/attribute.hpp>
 #include <chrono>
 #include <msgpack.hpp>
 
 #include "library/common.hpp"
+#include "library/elliptics.h"
 
 namespace msgpack {
 
@@ -56,25 +58,38 @@ inline n2::lookup_response &operator >>(msgpack::object o, n2::lookup_response &
 namespace ioremap { namespace elliptics { namespace n2 {
 
 template<typename T>
-void unpack(const data_pointer &data, T &value, size_t &length_of_packed) {
-	length_of_packed = 0;
+int unpack(dnet_net_state *st, const data_pointer &data, T &value, size_t &length_of_packed) {
+	try {
+		length_of_packed = 0;
 
-	msgpack::unpacked msg;
-	msgpack::unpack(&msg, data.data<char>(), data.size(), &length_of_packed);
-	msg.get().convert(&value);
+		msgpack::unpacked msg;
+		msgpack::unpack(&msg, data.data<char>(), data.size(), &length_of_packed);
+		msg.get().convert(&value);
+		return 0;
+
+	} catch (const std::exception &e) {
+		DNET_LOG_ERROR(st->n, "Failed to unpack msgpack message header: {}", e.what());
+		return -EILSEQ;
+	}
 }
 
-std::unique_ptr<lookup_request> deserialize_lookup_request(const dnet_cmd &cmd) {
-	return std::unique_ptr<lookup_request>(new lookup_request(cmd));
+int deserialize_lookup_request(std::unique_ptr<n2_request> &out_deserialized, dnet_net_state *st,
+                               const dnet_cmd &cmd) {
+	out_deserialized.reset(new lookup_request(cmd));
+	return 0;
 }
 
-std::unique_ptr<lookup_response> deserialize_lookup_response(const dnet_cmd &cmd, data_pointer &&message_buffer) {
+int deserialize_lookup_response(std::unique_ptr<n2_message> &out_deserialized, dnet_net_state *st,
+                                const dnet_cmd &cmd, data_pointer &&message_buffer) {
 	std::unique_ptr<lookup_response> msg(new lookup_response(cmd));
 
 	size_t unused_length_of_packed;
-	unpack(message_buffer, *msg, unused_length_of_packed);
+	int err = unpack(st, message_buffer, *msg, unused_length_of_packed);
+	if (err)
+		return err;
 
-	return msg;
+	out_deserialized = std::move(msg);
+	return 0;
 }
 
 }}} // namespace ioremap::elliptics::n2

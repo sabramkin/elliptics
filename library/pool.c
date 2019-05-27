@@ -401,7 +401,8 @@ void dnet_schedule_command(struct dnet_net_state *st)
 		dnet_log(st->n, DNET_LOG_DEBUG, "freed: size: %llu, trans: %llu, reply: %d, ptr: %p.",
 						(unsigned long long)c->size, tid, tid != c->trans, st->rcv_data);
 #endif
-		free(st->rcv_data);
+		if (!st->rcv_buffer_used)
+			free(st->rcv_data);
 		st->rcv_data = NULL;
 	}
 
@@ -516,13 +517,14 @@ again:
 	}
 
 schedule:
+	clock_gettime(CLOCK_MONOTONIC_RAW, &st->rcv_finish_ts);
+
 	err = n2_old_protocol_schedule_message(st);
 	if (err != -ENOTSUP)
 		goto out;
 
 	r = st->rcv_data;
 	st->rcv_data = NULL;
-	clock_gettime(CLOCK_MONOTONIC_RAW, &st->rcv_finish_ts);
 
 	dnet_schedule_command(st);
 
