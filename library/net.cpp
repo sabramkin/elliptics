@@ -1589,8 +1589,6 @@ int n2_trans_forward(n2_request_info *request_info, struct dnet_net_state *orig,
 		              t->rcv_trans, t->trans);
 	}
 
-	forward->n2_tmp_forwarding_in_progress = 1;
-
 	return n2_trans_send(t, request_info);
 }
 

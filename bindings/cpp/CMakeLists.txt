@@ -35,7 +35,7 @@ set(ELLIPTICS_CLIENT_SRCS
     ../../library/old_protocol/deserialize.cpp
     ../../library/old_protocol/old_protocol.cpp
     ../../library/old_protocol/serialize.cpp
-    ../../library/old_protocol/translate_request.cpp
+    ../../library/old_protocol/repliers.cpp
     ../../library/pool.c
     ../../library/pool.cpp
     ../../library/protocol.cpp

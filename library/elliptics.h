@@ -221,11 +221,6 @@ struct dnet_net_state
 
 	struct n2_recv_buffer	*rcv_buffer;
 	int rcv_buffer_used;
-
-	// Currently we save in-forwarding status, to separate responses addressed to server (from forwarded requests -
-	// we support such a responces) from responses addressed to client (we don't support them yet)
-	// TODO(sabramkin): remove this field when client starts to support protocol-independent responses
-	int n2_tmp_forwarding_in_progress;
 };
 
 int dnet_socket_local_addr(int s, struct dnet_addr *addr);

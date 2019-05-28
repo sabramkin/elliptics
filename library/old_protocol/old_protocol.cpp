@@ -127,19 +127,17 @@ void n2_old_protocol_rcvbuf_destroy(struct dnet_net_state *st) {
 bool n2_old_protocol_is_supported_message(struct dnet_net_state *st) {
 	const dnet_cmd *cmd = &st->rcv_cmd;
 
+	// Replies addressed to client are currently passed via old mechanic. This condition branch will be removed
+	// after client supports new mechanic for DNET_CMD_LOOKUP_NEW command.
 	if (cmd->flags & DNET_FLAGS_REPLY) {
-		// TODO(sabramkin): move n2_tmp_forwarding_in_progress flag to transaction descriptor
-		if (st->n2_tmp_forwarding_in_progress) {
-			if (!(cmd->flags & DNET_FLAGS_MORE))
-				st->n2_tmp_forwarding_in_progress = 0;
+		std::unique_ptr<dnet_trans, void (*)(dnet_trans *)>
+		        t(dnet_trans_search(st, cmd->trans), &dnet_trans_put);
 
-			return cmd->cmd == DNET_CMD_LOOKUP_NEW;
-		} else {
+		if (t && !t->n2_complete)
 			return false;
-		}
-	} else {
-		return cmd->cmd == DNET_CMD_LOOKUP_NEW;
 	}
+
+	return cmd->cmd == DNET_CMD_LOOKUP_NEW;
 }
 
 int n2_old_protocol_try_prepare(struct dnet_net_state *st) {
