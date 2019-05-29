@@ -11,9 +11,9 @@ namespace ioremap { namespace elliptics { namespace n2 {
 class old_protocol : public protocol_interface {
 public:
 	// Client side
-	void send_request(dnet_net_state *st,
-	                  std::unique_ptr<n2_request> request,
-	                  n2_repliers repliers) override;
+	int send_request(dnet_net_state *st,
+	                 std::unique_ptr<n2_request> request,
+	                 n2_repliers repliers) override;
 
 	// Net side
 	int recv_message(dnet_net_state *st, const dnet_cmd &cmd, data_pointer &&body);
@@ -24,8 +24,6 @@ private:
 
 	int schedule_request_info(dnet_net_state *st, std::unique_ptr<n2_request_info> &&request_info);
 	int translate_lookup_request(dnet_net_state *st, const dnet_cmd &cmd);
-
-	std::unordered_map<uint64_t/*trans_id*/, n2_repliers> repliers_table_;
 };
 
 }}} // namespace ioremap::elliptics::n2

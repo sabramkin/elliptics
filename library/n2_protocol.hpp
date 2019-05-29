@@ -27,6 +27,9 @@ struct n2_repliers {
 	// TODO: add streaming repliers
 };
 
+using n2_call_reply = std::function<int ()>;
+using n2_on_response = std::function<void (n2_call_reply)>;
+
 struct n2_request_info {
 	// Saved cmd copy. Reason: cmd info must be accessible beyond the lifetime of n2_request_info::request
 	// TODO(sabramkin): Don't hold cmd. If command handler needs to save some info from cmd, it must do it itself.
@@ -43,7 +46,7 @@ struct n2_response_info {
 	// TODO: or, maybe use here shared_ptr<dnet_cmd> cmd, which is carried by response_holder too
 	dnet_cmd cmd;
 
-	std::function<void ()> response_holder;
+	n2_call_reply call_reply;
 };
 
 namespace ioremap { namespace elliptics { namespace n2 {
@@ -55,9 +58,10 @@ public:
 	static int __attribute__((weak)) on_request(dnet_net_state *st, std::unique_ptr<n2_request_info> request_info);
 
 	// Client side
-	virtual void send_request(dnet_net_state *st,
-	                          std::unique_ptr<n2_request> request,
-	                          n2_repliers repliers) = 0;
+	virtual int send_request(dnet_net_state *st,
+	                         std::unique_ptr<n2_request> request,
+	                         n2_repliers repliers,
+	                         n2_on_response on_response) = 0;
 
 	virtual ~protocol_interface() = default;
 };

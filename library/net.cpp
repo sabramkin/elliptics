@@ -1449,147 +1449,48 @@ dnet_cmd n2_convert_to_response_cmd(dnet_cmd cmd) {
 }
 
 n2_repliers n2_make_repliers_via_request_queue(dnet_net_state *st, const dnet_cmd &cmd, n2_repliers repliers) {
-	auto enqueue_response = [st, cmd = n2_convert_to_response_cmd(cmd)](std::function<void ()> response_holder) {
+	auto enqueue_response = [st, cmd = n2_convert_to_response_cmd(cmd)](std::function<int ()> response_holder) {
 		std::unique_ptr<n2_response_info>
 			response_info(new n2_response_info{ cmd, std::move(response_holder) });
 
 		auto r = static_cast<dnet_io_req *>(calloc(1, sizeof(dnet_io_req)));
 		if (!r)
-			throw std::bad_alloc();
+			return -ENOMEM;
 
 		r->io_req_type = DNET_IO_REQ_TYPED_RESPONSE;
 		r->response_info = response_info.release();
 
 		r->st = dnet_state_get(st);
 		dnet_schedule_io(st->n, r);
+
+		return 0;
 	};
 
 	n2_repliers repliers_wrappers;
 
 	repliers_wrappers.on_reply_error = [on_reply_error = std::move(repliers.on_reply_error),
                                             enqueue_response](int errc) -> int {
-		try {
-			enqueue_response(std::bind(on_reply_error, errc));
-			return 0;
-		} catch (std::bad_alloc) {
-			return -ENOMEM;
-		}
+		return enqueue_response(std::bind(on_reply_error, errc));
 	};
 
 	repliers_wrappers.on_reply = [on_reply = std::move(repliers.on_reply),
 	                              enqueue_response](std::unique_ptr<n2_message> msg) -> int {
-		try {
-			enqueue_response(n2_bind_noncopyable(on_reply, std::move(msg)));
-			return 0;
-		} catch (std::bad_alloc) {
-			return -ENOMEM;
-		}
+		return enqueue_response(n2_bind_noncopyable(on_reply, std::move(msg)));
 	};
 
 	return repliers_wrappers;
 }
 
-static int n2_trans_send(dnet_trans *t, n2_request_info *request_info) {
+int n2_trans_forward(n2_request_info *request_info, struct dnet_net_state *orig, struct dnet_net_state *forward) {
 	using namespace ioremap::elliptics;
 
-	struct dnet_net_state *st = t->st;
-	struct dnet_test_settings test_settings;
-	int err;
-
-	dnet_trans_get(t);
-
-	BOOST_SCOPE_EXIT(&t) {
-		dnet_trans_put(t);
-	} BOOST_SCOPE_EXIT_END
-
-	pthread_mutex_lock(&st->trans_lock);
-	err = dnet_trans_insert_nolock(st, t);
-	if (!err) {
-		dnet_trans_update_timestamp(t);
-		dnet_trans_insert_timer_nolock(st, t);
-	}
-	pthread_mutex_unlock(&st->trans_lock);
-	if (err)
-		return err;
-
-	if (t->n->test_settings && !dnet_node_get_test_settings(t->n, &test_settings) &&
-	    test_settings.commands_mask & (1 << t->command))
-		return err;
-
-	auto repliers_wrappers = n2_make_repliers_via_request_queue(st,
+	auto repliers_wrappers = n2_make_repliers_via_request_queue(orig,
 	                                                            request_info->request->cmd,
 	                                                            std::move(request_info->repliers));
 
-	n2::net_state_get_protocol(st)->send_request(st,
-	                                             std::move(request_info->request),
-	                                             std::move(repliers_wrappers));
-
-	return err;
-}
-
-static int n2_trans_complete_forward_impl(struct dnet_addr * /*addr*/, n2_response_info *response_info, void *priv) {
-	auto cmd = &response_info->cmd;
-
-	if (!is_trans_destroyed(cmd)) {
-		response_info->response_holder();
-		return 0;
-	}
-
-	return -EINVAL;
-}
-
-static int n2_trans_complete_forward(struct dnet_addr *addr, n2_response_info *response_info, void *priv) {
-	auto t = static_cast<dnet_trans *>(priv);
-	return c_exception_guard(std::bind(&n2_trans_complete_forward_impl, addr, response_info, priv),
-	                         t->st->n, __FUNCTION__);
-}
-
-int n2_trans_forward(n2_request_info *request_info, struct dnet_net_state *orig, struct dnet_net_state *forward) {
-	dnet_cmd *cmd = &request_info->request->cmd;
-
-	auto t = dnet_trans_alloc(orig->n, 0);
-	if (!t)
-		return -ENOMEM;
-
-	t->rcv_trans = cmd->trans;
-	cmd->trans = t->cmd.trans = t->trans = atomic_inc(&orig->n->trans);
-
-	t->cmd = *cmd;
-
-	t->wait_ts = [&cmd, &t, &request_info]() -> timespec {
-		using namespace ioremap::elliptics;
-
-		auto deadline = request_info->request->deadline;
-
-		if (dnet_time_is_empty(&deadline))
-			return t->wait_ts;
-		else
-			return dnet_time_left_to_timeout(deadline);
-	}();
-
-	if (!t->wait_ts.tv_sec && !t->wait_ts.tv_nsec) {
-		return -ETIMEDOUT;
-	}
-
-	t->command = cmd->cmd;
-	t->n2_complete = n2_trans_complete_forward;
-	t->priv = t;
-
-	t->orig = dnet_state_get(orig);
-	t->st = dnet_state_get(forward);
-
-	{
-		char saddr[128];
-		char daddr[128];
-
-		DNET_LOG_INFO(orig->n, "{}: {}: forwarding trans: {} -> {}, trans: {} -> {}",
-		              dnet_dump_id(&t->cmd.id), dnet_cmd_string(t->command),
-		              dnet_addr_string_raw(&orig->addr, saddr, sizeof(saddr)),
-		              dnet_addr_string_raw(&forward->addr, daddr, sizeof(daddr)),
-		              t->rcv_trans, t->trans);
-	}
-
-	return n2_trans_send(t, request_info);
+	return n2::net_state_get_protocol(forward)->send_request(forward,
+	                                                         std::move(request_info->request),
+	                                                         std::move(repliers_wrappers));
 }
 
 int n2_send_error_response(struct dnet_net_state *st,

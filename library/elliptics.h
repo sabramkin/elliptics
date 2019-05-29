@@ -484,10 +484,6 @@ void dnet_io_cleanup(struct dnet_node *n);
 
 void dnet_io_req_free(struct dnet_io_req *r);
 
-void n2_io_req_enqueue_net(struct dnet_net_state *st, struct dnet_io_req *r);
-
-void n2_serialized_free(struct n2_serialized *serialized);
-
 struct dnet_config_data {
 	int cfg_addr_num;
 	struct dnet_addr *cfg_addrs;
@@ -770,9 +766,7 @@ struct dnet_trans
 	int				(* complete)(struct dnet_addr *addr,
 						     struct dnet_cmd *cmd,
 						     void *priv);
-	int				(* n2_complete)(struct dnet_addr *addr,
-					                struct n2_response_info *response_info,
-        				                void *priv);
+	struct n2_repliers		*repliers; /* if transaction is served by old_protocol */
 
 	struct dnet_trans_stats		stats;
 };
@@ -812,6 +806,9 @@ int dnet_trans_send(struct dnet_trans *t, struct dnet_io_req *req);
 
 int dnet_trans_forward(struct dnet_io_req *r, struct dnet_net_state *orig, struct dnet_net_state *forward);
 int n2_trans_forward(struct n2_request_info *request_info, struct dnet_net_state *orig, struct dnet_net_state *forward);
+
+void dnet_io_req_enqueue_net(struct dnet_net_state *st, struct dnet_io_req *r);
+timespec dnet_time_left_to_timeout(dnet_time &deadline);
 
 int dnet_recv_list(struct dnet_node *n, struct dnet_net_state *st);
 

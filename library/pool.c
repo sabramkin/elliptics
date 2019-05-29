@@ -35,10 +35,10 @@
 #include "elliptics/interface.h"
 #include "monitor/monitor.h"
 #include "monitor/measure_points.h"
-#include "pool_impl.h"
 #include "request_queue.h"
 #include "library/logger.hpp"
 #include "library/backend.h"
+#include "library/old_protocol/helpers.h"
 #include "library/old_protocol/old_protocol.h"
 
 static char *dnet_work_io_mode_string[] = {
@@ -480,7 +480,7 @@ again:
 
 		st->rcv_flags &= ~DNET_IO_CMD;
 
-		err = n2_old_protocol_try_prepare(st);
+		err = n2_old_protocol_prepare_message_buffer(st);
 		if (err == 0) {
 			if (c->size)
 				goto again;
@@ -541,138 +541,6 @@ out:
 	dnet_logger_unset_trace_id();
 	return err;
 }
-
-//static int dnet_process_recv_single(struct dnet_net_state *st)
-//{
-//	struct dnet_node *n = st->n;
-//	struct dnet_io_req *r;
-//	void *data;
-//	uint64_t size;
-//	int err;
-//
-//	// Note: when DNET_IO_CMD flag is set, rcv_cmd is represented in net bytes order, and gotten trace_id is wrong.
-//	dnet_logger_set_trace_id(st->rcv_cmd.trace_id, st->rcv_cmd.flags & DNET_FLAGS_TRACE_BIT);
-//
-//	if (!(st->rcv_flags & DNET_IO_CMD)) {
-//		err = n2_old_protocol_recv_body(st);
-//		if (err != -ENOTSUP) {
-//			goto out;
-//		}
-//	}
-//
-//again:
-//	/*
-//	 * Reading command first.
-//	 */
-//	if (st->rcv_flags & DNET_IO_CMD)
-//		data = &st->rcv_cmd;
-//	else
-//		data = st->rcv_data;
-//	data += st->rcv_offset;
-//	size = st->rcv_end - st->rcv_offset;
-//
-//	if (size) {
-//		err = recv(st->read_s, data, size, 0);
-//		if (err < 0) {
-//			err = -EAGAIN;
-//			if (errno != EAGAIN && errno != EINTR) {
-//				err = -errno;
-//				DNET_ERROR(n, "%s: failed to receive data, socket: %d/%d", dnet_state_dump_addr(st),
-//				           st->read_s, st->write_s);
-//				goto out;
-//			}
-//
-//			goto out;
-//		}
-//
-//		if (err == 0) {
-//			dnet_log(n, DNET_LOG_ERROR, "%s: peer has disconnected, socket: %d/%d",
-//				dnet_state_dump_addr(st), st->read_s, st->write_s);
-//			err = -ECONNRESET;
-//			goto out;
-//		}
-//
-//		dnet_logger_unset_trace_id();
-//		dnet_logger_set_trace_id(st->rcv_cmd.trace_id, st->rcv_cmd.flags & DNET_FLAGS_TRACE_BIT);
-//
-//		if ((st->rcv_flags & DNET_IO_CMD) && (st->rcv_offset == 0)) {
-//			clock_gettime(CLOCK_MONOTONIC_RAW, &st->rcv_start_ts);
-//		}
-//
-//		st->rcv_offset += err;
-//	}
-//
-//	if (st->rcv_offset != st->rcv_end)
-//		goto again;
-//
-//	if (st->rcv_flags & DNET_IO_CMD) {
-//		unsigned long long tid;
-//		struct dnet_cmd *c = &st->rcv_cmd;
-//
-//		dnet_convert_cmd(c);
-//
-//		tid = c->trans;
-//
-//		dnet_log(n, DNET_LOG_DEBUG, "%s: %s: received trans: %llu <- %s/%d: "
-//				"size: %llu, cflags: %s, status: %d",
-//				dnet_dump_id(&c->id), dnet_cmd_string(c->cmd), tid,
-//				dnet_state_dump_addr(st), c->backend_id,
-//				(unsigned long long)c->size, dnet_flags_dump_cflags(c->flags), c->status);
-//
-//		// Protocol-independent mechanic.
-//		err = n2_old_protocol_recv_body(st);
-//		if (err != -ENOTSUP) {
-//			goto out;
-//		}
-//
-//		// NOTE: Code below is serving protocol-embedded (old) mechanic
-//
-//		r = malloc(c->size + sizeof(struct dnet_cmd) + sizeof(struct dnet_io_req));
-//		if (!r) {
-//			err = -ENOMEM;
-//			goto out;
-//		}
-//		memset(r, 0, sizeof(struct dnet_io_req));
-//
-//		r->header = r + 1;
-//		r->hsize = sizeof(struct dnet_cmd);
-//		memcpy(r->header, &st->rcv_cmd, sizeof(struct dnet_cmd));
-//
-//		st->rcv_data = r;
-//		st->rcv_offset = sizeof(struct dnet_io_req) + sizeof(struct dnet_cmd);
-//		st->rcv_end = st->rcv_offset + c->size;
-//		st->rcv_flags &= ~DNET_IO_CMD;
-//
-//		if (c->size) {
-//			r->data = r->header + sizeof(struct dnet_cmd);
-//			r->dsize = c->size;
-//
-//			/*
-//			 * We read the command header, now get the data.
-//			 */
-//			goto again;
-//		}
-//	}
-//
-//	r = st->rcv_data;
-//	st->rcv_data = NULL;
-//	clock_gettime(CLOCK_MONOTONIC_RAW, &st->rcv_finish_ts);
-//
-//	dnet_schedule_command(st);
-//
-//	r->st = dnet_state_get(st);
-//
-//	dnet_schedule_io(n, r);
-//	dnet_logger_unset_trace_id();
-//	return 0;
-//
-//out:
-//	if (err != -EAGAIN && err != -EINTR)
-//		dnet_schedule_command(st);
-//
-//	dnet_logger_unset_trace_id();
-//	return err;
-//}
 
 /*
  * Tries to unmap IPv4 from IPv6.

@@ -37,6 +37,7 @@
 #include "elliptics/packet.h"
 #include "elliptics/interface.h"
 #include "n2_protocol.h"
+#include "old_protocol/helpers.h"
 #include "old_protocol/old_protocol.h"
 
 #include "monitor/measure_points.h"
@@ -314,25 +315,13 @@ static int dnet_io_req_queue(struct dnet_net_state *st, struct dnet_io_req *orig
 		goto err_out_exit;
 	}
 
-	clock_gettime(CLOCK_MONOTONIC_RAW, &r->queue_start_ts);
-
-	pthread_mutex_lock(&st->send_lock);
-	list_add_tail(&r->req_entry, &st->send_list);
-
-	if (!st->__need_exit)
-		dnet_schedule_send(st);
-	pthread_mutex_unlock(&st->send_lock);
-
-	pthread_mutex_lock(&st->n->io->full_lock);
-	list_stat_size_increase(&st->n->io->output_stats, 1);
-	pthread_mutex_unlock(&st->n->io->full_lock);
-	HANDY_COUNTER_INCREMENT("io.output.queue.size", 1);
+	dnet_io_req_enqueue_net(st, r);
 
 err_out_exit:
 	return err;
 }
 
-void n2_io_req_enqueue_net(struct dnet_net_state *st, struct dnet_io_req *r)
+void dnet_io_req_enqueue_net(struct dnet_net_state *st, struct dnet_io_req *r)
 {
 	clock_gettime(CLOCK_MONOTONIC_RAW, &r->queue_start_ts);
 
@@ -644,6 +633,10 @@ static int dnet_process_reply(struct dnet_net_state *st, struct dnet_io_req *r) 
 
 	HANDY_COUNTER_INCREMENT("io.replies", 1);
 
+	if (r->io_req_type == DNET_IO_REQ_TYPED_RESPONSE) {
+		return n2_io_req_call_response_holder(r);
+	}
+
 	pthread_mutex_lock(&st->trans_lock);
 	t = dnet_trans_search(st, tid);
 	if (t) {
@@ -679,7 +672,7 @@ static int dnet_process_reply(struct dnet_net_state *st, struct dnet_io_req *r) 
 	t->stats.recv_queue_time += r->queue_time;
 	t->stats.recv_time += r->recv_time;
 
-	if (t->complete || t->n2_complete) {
+	if (t->complete) {
 		if (t->command == DNET_CMD_READ || t->command == DNET_CMD_READ_NEW) {
 			uint64_t ioflags = 0;
 			if ((t->command == DNET_CMD_READ) &&
@@ -711,9 +704,7 @@ static int dnet_process_reply(struct dnet_net_state *st, struct dnet_io_req *r) 
 			}
 		}
 
-		r->io_req_type == DNET_IO_REQ_OLD_PROTOCOL
-			? t->complete(dnet_state_addr(t->st), cmd, t->priv)
-			: t->n2_complete(dnet_state_addr(t->st), r->response_info, t->priv);
+		t->complete(dnet_state_addr(t->st), cmd, t->priv);
 	}
 
 	if (!(flags & DNET_FLAGS_MORE)) {

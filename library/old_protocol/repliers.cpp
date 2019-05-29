@@ -67,7 +67,3 @@ void lookup_replier::reply_impl(std::unique_ptr<n2_message> msg) {
 }
 
 }}} // namespace ioremap::elliptics::n2
-
-void n2_serialized_free(struct n2_serialized *serialized) {
-	delete serialized;
-}

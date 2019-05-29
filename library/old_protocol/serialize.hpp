@@ -16,7 +16,7 @@ struct n2_serialized {
 
 namespace ioremap { namespace elliptics { namespace n2 {
 
-void enqueue_net(dnet_net_state *st, std::unique_ptr<n2_serialized> serialized);
+int enqueue_net(dnet_net_state *st, std::unique_ptr<n2_serialized> serialized);
 
 // Serializators for requests and responses
 

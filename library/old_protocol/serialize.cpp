@@ -3,6 +3,7 @@
 #include <msgpack.hpp>
 
 #include "library/elliptics.h"
+#include "library/old_protocol/helpers.h"
 
 namespace msgpack {
 
@@ -43,13 +44,14 @@ inline msgpack::packer<Stream> &operator<<(msgpack::packer<Stream> &o, const n2:
 
 namespace ioremap { namespace elliptics { namespace n2 {
 
-void enqueue_net(dnet_net_state *st, std::unique_ptr<n2_serialized> serialized) {
+int enqueue_net(dnet_net_state *st, std::unique_ptr<n2_serialized> serialized) {
 	auto r = static_cast<dnet_io_req *>(calloc(1, sizeof(dnet_io_req)));
 	if (!r)
-		throw std::bad_alloc();
+		return -ENOMEM;
 
 	r->serialized = serialized.release();
-	n2_io_req_enqueue_net(st, r);
+	dnet_io_req_enqueue_net(st, r);
+	return 0;
 }
 
 static uint64_t response_transform_flags(uint64_t flags) {

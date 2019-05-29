@@ -29,7 +29,8 @@
 #include "elliptics.h"
 #include "elliptics/packet.h"
 #include "elliptics/interface.h"
-#include "library/logger.hpp"
+#include "logger.hpp"
+#include "old_protocol/helpers.h"
 
 #define CHECK_THREAD_WAKEUP_PERIOD_NS (10 * 1000 * 1000)
 
@@ -265,6 +266,8 @@ void dnet_trans_destroy(struct dnet_trans *t)
 		t->cmd.flags |= DNET_FLAGS_DESTROY;
 		t->complete(t->st ? dnet_state_addr(t->st) : NULL, &t->cmd, t->priv);
 	}
+
+	n2_trans_destroy_repliers(t);
 
 	if (st && st->n && t->command) {
 		if (t->cmd.status != -ETIMEDOUT) {
