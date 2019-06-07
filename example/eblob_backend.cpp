@@ -2306,6 +2306,8 @@ int n2_eblob_backend_command_handler(void *state,
                                      struct n2_request_info *req_info,
                                      void *cmd_stats,
                                      struct dnet_access_context *context) {
+	(cmd_stats); // Temporarily unused parameter, TODO(sabramkin): don't forget to remove this line
+
 	int err = 0;
 	const dnet_cmd &cmd = req_info->request->cmd;
 	auto c = static_cast<eblob_backend_config *>(priv);

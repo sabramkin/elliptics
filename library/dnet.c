@@ -1764,6 +1764,12 @@ static int n2_process_cmd_without_backend_raw(struct dnet_net_state *st,
                                               struct n2_request_info *req_info,
                                               struct dnet_cmd_stats *cmd_stats,
                                               struct dnet_access_context *context) {
+	// Temporarily unused parameters, TODO(sabramkin): don't forget to remove these lines
+	(st);
+	(req_info);
+	(cmd_stats);
+	(context);
+
 	return -ENOTSUP;
 }
 

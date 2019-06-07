@@ -54,6 +54,8 @@ int old_protocol::recv_message(dnet_net_state *st, const dnet_cmd &cmd, data_poi
 }
 
 int old_protocol::recv_request(dnet_net_state *st, const dnet_cmd &cmd, data_pointer &&body) {
+	(body); // Temporarily unused parameter, TODO(sabramkin): don't forget to remove this line
+
 	switch (cmd.cmd) {
 	case DNET_CMD_LOOKUP_NEW:
 		return translate_lookup_request(st, cmd);

@@ -1569,7 +1569,9 @@ int n2_trans_forward(n2_request_info *request_info, struct dnet_net_state *orig,
 int n2_send_error_response(struct dnet_net_state *st,
                            struct n2_request_info *req_info,
                            int errc,
-                           struct dnet_access_context *context) {
+                           struct dnet_access_context *context __attribute__((unused))) {
+	// TODO: remove context parameter since on_reply_error must embed the same context
+
 	auto impl = [&] {
 		return req_info->repliers.on_reply_error(errc);
 	};
