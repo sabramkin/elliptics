@@ -78,24 +78,20 @@ int serialize_lookup_request(dnet_net_state *, std::unique_ptr<n2_request> msg_i
 
 int serialize_lookup_response(dnet_net_state *, std::unique_ptr<n2_message> msg_in,
                               std::unique_ptr<n2_serialized> &out_serialized) {
-	auto impl = [&] {
-		auto &msg = static_cast<lookup_response &>(*msg_in);
+	auto &msg = static_cast<lookup_response &>(*msg_in);
 
-		msgpack::sbuffer msgpack_buffer;
-		msgpack::pack(msgpack_buffer, msg);
+	msgpack::sbuffer msgpack_buffer;
+	msgpack::pack(msgpack_buffer, msg);
 
-		dnet_cmd cmd = msg.cmd;
-		cmd.flags = response_transform_flags(cmd.flags);
-		cmd.size = msgpack_buffer.size();
+	dnet_cmd cmd = msg.cmd;
+	cmd.flags = response_transform_flags(cmd.flags);
+	cmd.size = msgpack_buffer.size();
 
-		out_serialized.reset(new n2_serialized{
-			cmd, { data_pointer::copy(msgpack_buffer.data(), msgpack_buffer.size()) }
-		});
+	out_serialized.reset(new n2_serialized{
+		cmd, { data_pointer::copy(msgpack_buffer.data(), msgpack_buffer.size()) }
+	});
 
-		return 0;
-	};
-
-	return c_exception_guard(impl, st->n, __FUNCTION__);
+	return 0;
 }
 
 }}} // namespace ioremap::elliptics::n2
