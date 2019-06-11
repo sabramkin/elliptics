@@ -23,6 +23,19 @@
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
+#include <exception>
+
+template<class T, class Base> T &dynamic_cast_checked(Base &base, const char *file, int line) {
+	try {
+		return dynamic_cast<T &>(base);
+	} catch (const std::bad_cast &) {
+		std::cout << getpid() << ": BAD_CAST: " << file << ":" << line << std::endl;
+		abort();
+		return *(T *)0;
+	}
+}
+
+#define dynamic_cast2(T, b) dynamic_cast_checked<T>(b, __FILE__, __LINE__);
 
 namespace ioremap { namespace elliptics {
 
@@ -46,6 +59,7 @@ namespace ioremap { namespace elliptics {
 	} \
 	do {} while (false)
 
+// TODO(sabramkin): this is default constructor that operates with deprecated callback_result_data
 callback_result_entry::callback_result_entry() : m_data(std::make_shared<callback_result_data>())
 {
 }
@@ -100,8 +114,8 @@ error_info callback_result_entry::error() const
 
 data_pointer callback_result_entry::raw_data() const
 {
-	auto old_data = static_cast<callback_result_data *>(m_data.get());
-	return old_data->raw_data;
+	auto &old_data = dynamic_cast2(callback_result_data, *m_data);
+	return old_data.raw_data;
 }
 
 struct dnet_addr *callback_result_entry::address() const
@@ -116,14 +130,25 @@ struct dnet_cmd *callback_result_entry::command() const
 
 data_pointer callback_result_entry::data() const
 {
-	auto old_data = static_cast<callback_result_data *>(m_data.get());
-	return old_data->data();
+	auto &old_data = dynamic_cast2(callback_result_data, *m_data);
+	return old_data.data();
 }
 
 uint64_t callback_result_entry::size() const
 {
-	auto old_data = static_cast<callback_result_data *>(m_data.get());
-	return old_data->size();
+	auto &old_data = dynamic_cast2(callback_result_data, *m_data);
+	return old_data.size();
+}
+
+n2_body *callback_result_entry::body() const
+{
+	auto &n2_data = dynamic_cast2(n2_callback_result_data, *m_data);
+	return n2_data.result_body.get();
+}
+
+bool callback_result_entry::tmp_is_n2_protocol() const
+{
+	return m_data->tmp_is_n2_protocol;
 }
 
 read_result_entry::read_result_entry()

@@ -30,6 +30,7 @@
 #include <thread>
 
 #include "elliptics/async_result_cast.hpp"
+#include "library/n2_protocol.hpp"
 
 namespace ioremap { namespace elliptics {
 
@@ -64,6 +65,7 @@ class session_scope
 };
 
 // TODO(sabramkin): This abstraction is temporary and used while refactoring in progress.
+// TODO(sabramkin): After refactoring only n2_callback_result_data should stay, no base is needed.
 class callback_result_data_base
 {
 	public:
@@ -78,6 +80,11 @@ class callback_result_data_base
 		virtual ~callback_result_data_base() = default;
 
 		error_info error;
+
+		// Hint to determine derived without dynamic_cast. Reason: lookup_result_entry is used by two handlers:
+		// session::lookup and session::write. The first one is converted to protocol-independent, but the
+		// second one isn't.
+		bool tmp_is_n2_protocol;
 };
 
 #define DNET_DATA_BEGIN_2() try { \
@@ -101,10 +108,13 @@ class callback_result_data : public callback_result_data_base
 	public:
 		callback_result_data()
 		{
+			tmp_is_n2_protocol = false;
 		}
 
 		callback_result_data(const dnet_addr *addr, const dnet_cmd *cmd)
 		{
+			tmp_is_n2_protocol = false;
+
 			const size_t size = sizeof(dnet_addr) + sizeof(dnet_cmd) + cmd->size;
 			raw_data = data_pointer::allocate(size);
 			if (addr)
@@ -174,6 +184,81 @@ class callback_result_data : public callback_result_data_base
 		data_pointer raw_data;
 };
 
+class n2_callback_result_data : public callback_result_data_base
+{
+	public:
+		n2_callback_result_data()
+		: is_result_assigned(false)
+		{
+			tmp_is_n2_protocol = true;
+		}
+
+		n2_callback_result_data(const dnet_addr &addr_in, const dnet_cmd &cmd_in,
+		                        const std::shared_ptr<n2_body> &result_body_in, int result_status_in,
+		                        bool is_last_in)
+		: addr(addr_in)
+		, cmd(cmd_in)
+		, is_result_assigned(true)
+		, result_body(result_body_in)
+		, result_status(result_status_in)
+		, is_last(is_last_in)
+		{
+			tmp_is_n2_protocol = true;
+
+			// TODO(sabramkin):
+			// Here is emulated protocol logic for single-response commands. It is hardcode that we must
+			// resolve when we introduce bulk commands. See also is_final() method. Note that protocol
+			// mustn't provide its inner structures (such as dnet_cmd), so we must remove command() method
+			// in the future, and must remove cmd member.
+			cmd.flags = (cmd.flags & ~(DNET_FLAGS_NEED_ACK)) | DNET_FLAGS_REPLY;
+			cmd.status = result_status_in;
+		}
+
+		dnet_addr *address() const override
+		{
+			return const_cast<dnet_addr *>(&addr);
+		}
+
+		dnet_cmd *command() const override
+		{
+			return const_cast<dnet_cmd *>(&cmd);
+		}
+
+		int status() const override
+		{
+			return result_status;
+		}
+
+		bool is_valid() const override
+		{
+			return is_result_assigned;
+		}
+
+		bool is_ack() const override
+		{
+			return result_status == 0 && !result_body;
+		}
+
+		bool is_final() const override
+		{
+			return is_last;
+		}
+
+		bool is_client() const override
+		{
+			return false;
+		}
+
+		dnet_addr addr;
+		dnet_cmd cmd;
+
+		// Either result or nonzero result_status must be set
+		bool is_result_assigned;
+		std::shared_ptr<n2_body> result_body;
+		int result_status;
+		bool is_last;
+};
+
 struct dnet_net_state_deleter
 {
 	void operator () (dnet_net_state *state) const
@@ -188,6 +273,7 @@ typedef std::unique_ptr<dnet_net_state, dnet_net_state_deleter> net_state_ptr;
 // Send request to specific state
 async_generic_result send_to_single_state(session &sess, const transport_control &control);
 async_generic_result send_to_single_state(session &sess, dnet_io_control &control);
+async_generic_result n2_send_to_single_state(session &sess, const n2_request &request);
 
 // Send request to each backend
 async_generic_result send_to_each_backend(session &sess, const transport_control &control);
