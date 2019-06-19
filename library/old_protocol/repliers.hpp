@@ -20,20 +20,21 @@ namespace ioremap { namespace elliptics { namespace n2 {
 class replier_base {
 public:
 	replier_base(const char *handler_name, dnet_net_state *st, const dnet_cmd &cmd);
-	int reply(std::unique_ptr<n2_message> msg);
+
+	int reply(const std::shared_ptr<void> &msg);
 	int reply_error(int errc);
 
 protected:
 	dnet_net_state *st_;
+	dnet_cmd cmd_;
 
 private:
-	virtual int reply_impl(std::unique_ptr<n2_message> msg);
+	virtual int reply_impl(const std::shared_ptr<void> &msg);
 	int reply_error_impl(int errc);
 
 	const char *handler_name_;
+	bool need_ack_;
 	std::atomic_flag reply_has_sent_;
-
-	dnet_cmd cmd_;
 };
 
 // Lookup request stuff
@@ -43,7 +44,7 @@ public:
 	lookup_replier(dnet_net_state *st, const dnet_cmd &cmd);
 
 private:
-	int reply_impl(std::unique_ptr<n2_message> msg) override;
+	int reply_impl(const std::shared_ptr<void> &msg) override;
 };
 
 }}} // namespace ioremap::elliptics::n2

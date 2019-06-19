@@ -10,9 +10,10 @@
 namespace ioremap { namespace elliptics { namespace n2 {
 
 int old_protocol::send_request(dnet_net_state *st,
-                               std::unique_ptr<n2_request> request,
-                               n2_repliers repliers) {
-	auto &cmd = request->cmd;
+                               const n2_request &request,
+                               n2_repliers &&repliers) {
+	dnet_node *n = st->n;
+	const dnet_cmd &cmd = request.cmd;
 
 	{
 		// Note: currently transaction is created outside from protocol. When we'll create it in protocol,
@@ -34,7 +35,7 @@ int old_protocol::send_request(dnet_net_state *st,
 	case DNET_CMD_LOOKUP_NEW:
 		{
 			std::unique_ptr<n2_serialized> serialized;
-			int err = serialize_lookup_request(st, std::move(request), serialized);
+			int err = serialize(n, cmd, serialized);
 			if (err)
 				return err;
 
@@ -63,8 +64,7 @@ int old_protocol::recv_request(dnet_net_state *st, const dnet_cmd &cmd, data_poi
 	}
 }
 
-int old_protocol::recv_response(dnet_net_state *st, const dnet_cmd &cmd, data_pointer &&body) {
-
+int old_protocol::recv_response(dnet_net_state *st, const dnet_cmd &cmd, data_pointer &&raw_body) {
 	pthread_mutex_lock(&st->trans_lock);
 	std::unique_ptr<dnet_trans, void (*)(dnet_trans *)>
 		t(dnet_trans_search(st, cmd.trans), &dnet_trans_put);
@@ -82,12 +82,12 @@ int old_protocol::recv_response(dnet_net_state *st, const dnet_cmd &cmd, data_po
 		switch (cmd.cmd) {
 		case DNET_CMD_LOOKUP_NEW:
 			{
-				std::unique_ptr<n2_message> msg;
-				int err = deserialize_lookup_response(st, cmd, std::move(body), msg);
+				std::shared_ptr<void> body;
+				int err = deserialize_lookup_response_body(st->n, std::move(raw_body), body);
 				if (err)
 					return err;
 
-				return repliers.on_reply(std::move(msg));
+				return repliers.on_reply(body);
 			}
 		default:
 			// Must never reach this code, due to is_supported_message() filter called before
@@ -96,24 +96,15 @@ int old_protocol::recv_response(dnet_net_state *st, const dnet_cmd &cmd, data_po
 	}
 }
 
-int old_protocol::schedule_request_info(dnet_net_state *st,
-                                        std::unique_ptr<n2_request_info> &&request_info) {
-	request_info->cmd = request_info->request->cmd;
-	return on_request(st, std::move(request_info));
-}
-
 int old_protocol::translate_lookup_request(dnet_net_state *st, const dnet_cmd &cmd) {
-	std::unique_ptr<n2_request_info> request_info(new n2_request_info);
+	std::unique_ptr<n2_request_info> request_info(
+		new n2_request_info{ n2_request(cmd, default_deadline()), n2_repliers() });
 
-	int err = deserialize_lookup_request(st, cmd, request_info->request);
-	if (err)
-		return err;
-
-	auto replier = std::make_shared<lookup_replier>(st, request_info->request->cmd);
+	auto replier = std::make_shared<lookup_replier>(st, cmd);
 	request_info->repliers.on_reply = std::bind(&lookup_replier::reply, replier, std::placeholders::_1);
 	request_info->repliers.on_reply_error = std::bind(&lookup_replier::reply_error, replier, std::placeholders::_1);
 
-	return schedule_request_info(st, std::move(request_info));
+	return on_request(st, std::move(request_info));
 }
 
 }}} // namespace ioremap::elliptics::n2

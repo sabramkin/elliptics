@@ -55,43 +55,40 @@ int enqueue_net(dnet_net_state *st, std::unique_ptr<n2_serialized> serialized) {
 	return 0;
 }
 
-static uint64_t response_transform_flags(uint64_t flags) {
-	return (flags & ~(DNET_FLAGS_NEED_ACK)) | DNET_FLAGS_REPLY;
-}
-
-int serialize_error_response(dnet_net_state *, const dnet_cmd &cmd_in,
-                             std::unique_ptr<n2_serialized> &out_serialized) {
-	dnet_cmd cmd = cmd_in;
-	cmd.flags = response_transform_flags(cmd.flags);
-
-	out_serialized.reset(new n2_serialized{ cmd, {} });
-	return 0;
-}
-
-int serialize_lookup_request(dnet_net_state *, std::unique_ptr<n2_request> msg_in,
-                             std::unique_ptr<n2_serialized> &out_serialized) {
-	auto &msg = static_cast<lookup_request &>(*msg_in);
-
-	out_serialized.reset(new n2_serialized{ msg.cmd, {} });
-	return 0;
-}
-
-int serialize_lookup_response(dnet_net_state *, std::unique_ptr<n2_message> msg_in,
-                              std::unique_ptr<n2_serialized> &out_serialized) {
-	auto &msg = static_cast<lookup_response &>(*msg_in);
-
+static int serialize_body(dnet_node *, const lookup_response &body, n2_serialized::chunks_t &chunks) {
 	msgpack::sbuffer msgpack_buffer;
-	msgpack::pack(msgpack_buffer, msg);
-
-	dnet_cmd cmd = msg.cmd;
-	cmd.flags = response_transform_flags(cmd.flags);
-	cmd.size = msgpack_buffer.size();
-
-	out_serialized.reset(new n2_serialized{
-		cmd, { data_pointer::copy(msgpack_buffer.data(), msgpack_buffer.size()) }
-	});
-
+	msgpack::pack(msgpack_buffer, body);
+	chunks.emplace_back(data_pointer::copy(msgpack_buffer.data(), msgpack_buffer.size()));
 	return 0;
 }
+
+static size_t calculate_body_size(const n2_serialized::chunks_t &chunks) {
+	size_t size = 0;
+	for (const auto &chunk : chunks) {
+		size += chunk.size();
+	}
+	return size;
+}
+
+int serialize(dnet_node *, const dnet_cmd &cmd,
+              std::unique_ptr<n2_serialized> &out_serialized) {
+	out_serialized.reset(new n2_serialized{ cmd, {} });
+	out_serialized->cmd.size = 0;
+	return 0;
+}
+
+template<class TMessageBody>
+int serialize(dnet_node *n, const dnet_cmd &cmd, const TMessageBody &body,
+              std::unique_ptr<n2_serialized> &out_serialized) {
+	out_serialized.reset(new n2_serialized{ cmd, {} });
+	int err = serialize_body(n, body, out_serialized->chunks);
+	if (err)
+		return err;
+	out_serialized->cmd.size = calculate_body_size(out_serialized->chunks);
+	return 0;
+}
+
+template int serialize<lookup_response>(dnet_node *n, const dnet_cmd &cmd_in, const lookup_response &body,
+                                        std::unique_ptr<n2_serialized> &out_serialized);
 
 }}} // namespace ioremap::elliptics::n2

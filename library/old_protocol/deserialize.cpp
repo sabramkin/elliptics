@@ -58,7 +58,7 @@ inline n2::lookup_response &operator >>(msgpack::object o, n2::lookup_response &
 namespace ioremap { namespace elliptics { namespace n2 {
 
 template<typename T>
-int unpack(dnet_net_state *st, const data_pointer &data, T &value, size_t &length_of_packed) {
+int unpack(dnet_node *n, const data_pointer &data, T &value, size_t &length_of_packed) {
 	try {
 		length_of_packed = 0;
 
@@ -68,27 +68,21 @@ int unpack(dnet_net_state *st, const data_pointer &data, T &value, size_t &lengt
 		return 0;
 
 	} catch (const std::exception &e) {
-		DNET_LOG_ERROR(st->n, "Failed to unpack msgpack message header: {}", e.what());
+		DNET_LOG_ERROR(n, "Failed to unpack msgpack message header: {}", e.what());
 		return -EINVAL;
 	}
 }
 
-int deserialize_lookup_request(dnet_net_state *, const dnet_cmd &cmd,
-                               std::unique_ptr<n2_request> &out_deserialized) {
-	out_deserialized.reset(new lookup_request(cmd));
-	return 0;
-}
-
-int deserialize_lookup_response(dnet_net_state *st, const dnet_cmd &cmd, data_pointer &&message_buffer,
-                                std::unique_ptr<n2_message> &out_deserialized) {
-	std::unique_ptr<lookup_response> msg(new lookup_response(cmd));
+int deserialize_lookup_response_body(dnet_node *n, data_pointer &&message_buffer,
+                                     std::shared_ptr<void> &out_deserialized) {
+	auto body = std::make_shared<lookup_response>();
 
 	size_t unused_length_of_packed;
-	int err = unpack(st, message_buffer, *msg, unused_length_of_packed);
+	int err = unpack(n, message_buffer, *body, unused_length_of_packed);
 	if (err)
 		return err;
 
-	out_deserialized = std::move(msg);
+	out_deserialized = std::move(body);
 	return 0;
 }
 
