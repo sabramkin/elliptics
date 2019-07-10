@@ -70,27 +70,27 @@ callback_result_entry &callback_result_entry::operator =(const callback_result_e
 
 bool callback_result_entry::is_valid() const
 {
-	return !m_data->raw_data.empty();
+	return m_data->is_valid();
 }
 
 bool callback_result_entry::is_ack() const
 {
-	return status() == 0 && data().empty();
+	return m_data->is_ack();
 }
 
 bool callback_result_entry::is_final() const
 {
-	return !(command()->flags & DNET_FLAGS_MORE);
+	return m_data->is_final();
 }
 
 bool callback_result_entry::is_client() const
 {
-	return !(command()->flags & DNET_FLAGS_REPLY);
+	return m_data->is_client();
 }
 
 int callback_result_entry::status() const
 {
-	return command()->status;
+	return m_data->status();
 }
 
 error_info callback_result_entry::error() const
@@ -105,35 +105,22 @@ data_pointer callback_result_entry::raw_data() const
 
 struct dnet_addr *callback_result_entry::address() const
 {
-	DNET_DATA_BEGIN();
-	return m_data->raw_data
-		.data<struct dnet_addr>();
-	DNET_DATA_END(0);
+	return m_data->address();
 }
 
 struct dnet_cmd *callback_result_entry::command() const
 {
-	DNET_DATA_BEGIN();
-	return m_data->raw_data
-		.skip<struct dnet_addr>()
-		.data<struct dnet_cmd>();
-	DNET_DATA_END(0);
+	return m_data->command();
 }
 
 data_pointer callback_result_entry::data() const
 {
-	DNET_DATA_BEGIN();
-	return m_data->raw_data
-		.skip<struct dnet_addr>()
-		.skip<struct dnet_cmd>();
-	DNET_DATA_END(0);
+	return m_data->data();
 }
 
 uint64_t callback_result_entry::size() const
 {
-	return (m_data->raw_data.size() <= (sizeof(struct dnet_addr) + sizeof(struct dnet_cmd)))
-		? (0)
-		: (m_data->raw_data.size() - (sizeof(struct dnet_addr) + sizeof(struct dnet_cmd)));
+	return m_data->size();
 }
 
 read_result_entry::read_result_entry()
