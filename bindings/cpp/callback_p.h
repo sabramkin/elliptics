@@ -63,6 +63,22 @@ class session_scope
 		uint32_t m_policy;
 };
 
+#define DNET_DATA_BEGIN_2() try { \
+	do {} while (false)
+
+#define DNET_DATA_END_2(SIZE) \
+	} catch (not_found_error &) { \
+		if (!is_valid()) { \
+			throw_error(-ENOENT, "entry::%s(): entry is null", __FUNCTION__); \
+		} else {\
+			dnet_cmd *cmd = command(); \
+			throw_error(-ENOENT, cmd->id, "entry::%s(): data.size is too small, expected: %zu, actual: %zu, status: %d", \
+				__FUNCTION__, size_t(SIZE), data().size(), cmd->status); \
+		} \
+		throw; \
+	} \
+	do {} while (false)
+
 class callback_result_data
 {
 	public:
@@ -83,6 +99,63 @@ class callback_result_data
 
 		virtual ~callback_result_data()
 		{
+		}
+
+		bool is_valid() const
+		{
+			return !raw_data.empty();
+		}
+
+		bool is_ack() const
+		{
+			return status() == 0 && data().empty();
+		}
+
+		bool is_final() const
+		{
+			return !(command()->flags & DNET_FLAGS_MORE);
+		}
+
+		bool is_client() const
+		{
+			return !(command()->flags & DNET_FLAGS_REPLY);
+		}
+
+		int status() const
+		{
+			return command()->status;
+		}
+
+		dnet_addr *address() const
+		{
+			DNET_DATA_BEGIN_2();
+			return raw_data
+				.data<dnet_addr>();
+			DNET_DATA_END_2(0);
+		}
+
+		dnet_cmd *command() const
+		{
+			DNET_DATA_BEGIN_2();
+			return raw_data
+				.skip<dnet_addr>()
+				.data<dnet_cmd>();
+			DNET_DATA_END_2(0);
+		}
+
+		data_pointer data() const
+		{
+			DNET_DATA_BEGIN_2();
+			return raw_data
+				.skip<struct dnet_addr>()
+				.skip<struct dnet_cmd>();
+			DNET_DATA_END_2(0);
+		}
+
+		uint64_t size() const
+		{
+			constexpr size_t headers_size = sizeof(struct dnet_addr) + sizeof(struct dnet_cmd);
+			return std::max(raw_data.size(), headers_size) - headers_size;
 		}
 
 		data_pointer raw_data;
