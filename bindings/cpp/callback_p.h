@@ -172,7 +172,6 @@ class callback_result_data : public callback_result_data_base
 		}
 
 		data_pointer raw_data;
-		error_info error;
 };
 
 struct dnet_net_state_deleter
