@@ -546,6 +546,14 @@ static void test_bulk_remove(session &sess, size_t test_count)
 	for (auto it = result.begin(); it != result.end(); ++it) {
 		// count only acks since they are the only packets returned by remove()
 		count += (it->status() == 0) && (it->is_ack());
+		if (!it->is_ack()) {
+			std::cout
+			<< ": raw_data_size = " << it->raw_data().size()
+			<< ", data_size = " << it->data().size()
+			<< ", size = " << it->size()
+			<< ", headsize = " << (sizeof(dnet_addr) +sizeof(dnet_cmd))
+			<< "\n";
+		}
 		BOOST_WARN_EQUAL(it->status(), 0);
 	}
 	BOOST_REQUIRE_EQUAL(count, test_count * 2);
