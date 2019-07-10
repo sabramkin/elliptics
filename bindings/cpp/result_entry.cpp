@@ -54,7 +54,7 @@ callback_result_entry::callback_result_entry(const callback_result_entry &other)
 {
 }
 
-callback_result_entry::callback_result_entry(const std::shared_ptr<callback_result_data> &data) : m_data(data)
+callback_result_entry::callback_result_entry(const std::shared_ptr<callback_result_data_base> &data) : m_data(data)
 {
 }
 
@@ -100,7 +100,8 @@ error_info callback_result_entry::error() const
 
 data_pointer callback_result_entry::raw_data() const
 {
-	return m_data->raw_data;
+	auto old_data = static_cast<callback_result_data *>(m_data.get());
+	return old_data->raw_data;
 }
 
 struct dnet_addr *callback_result_entry::address() const
@@ -115,12 +116,14 @@ struct dnet_cmd *callback_result_entry::command() const
 
 data_pointer callback_result_entry::data() const
 {
-	return m_data->data();
+	auto old_data = static_cast<callback_result_data *>(m_data.get());
+	return old_data->data();
 }
 
 uint64_t callback_result_entry::size() const
 {
-	return m_data->size();
+	auto old_data = static_cast<callback_result_data *>(m_data.get());
+	return old_data->size();
 }
 
 read_result_entry::read_result_entry()

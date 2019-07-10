@@ -25,14 +25,14 @@
 
 namespace ioremap { namespace elliptics {
 
-class callback_result_data;
+class callback_result_data_base;
 
 class callback_result_entry
 {
 	public:
 		callback_result_entry();
 		callback_result_entry(const callback_result_entry &other);
-		callback_result_entry(const std::shared_ptr<callback_result_data> &data);
+		callback_result_entry(const std::shared_ptr<callback_result_data_base> &data);
 		~callback_result_entry();
 
 		callback_result_entry &operator =(const callback_result_entry &other);
@@ -59,7 +59,7 @@ class callback_result_entry
 		{ return data().data<T>(); }
 
 	protected:
-		std::shared_ptr<callback_result_data> m_data;
+		std::shared_ptr<callback_result_data_base> m_data;
 };
 
 class read_result_entry : public callback_result_entry

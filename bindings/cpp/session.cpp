@@ -1087,7 +1087,7 @@ struct cas_functor : std::enable_shared_from_this<cas_functor>
 			cmd.cmd = DNET_CMD_WRITE;
 
 			auto data = std::make_shared<callback_result_data>(&addr, &cmd);
-			callback_result_entry entry = data;
+			callback_result_entry entry(data);
 			handler.process(*static_cast<const write_result_entry *>(&entry));
 			handler.complete(error_info());
 			return;
