@@ -63,6 +63,23 @@ class session_scope
 		uint32_t m_policy;
 };
 
+// TODO(sabramkin): This abstraction is temporary and used while refactoring in progress.
+class callback_result_data_base
+{
+	public:
+		virtual dnet_addr *address() const = 0;
+		virtual dnet_cmd *command() const = 0;
+		virtual int status() const = 0;
+		virtual bool is_valid() const = 0;
+		virtual bool is_ack() const = 0;
+		virtual bool is_final() const = 0;
+		virtual bool is_client() const = 0;
+
+		virtual ~callback_result_data_base() = default;
+
+		error_info error;
+};
+
 #define DNET_DATA_BEGIN_2() try { \
 	do {} while (false)
 
@@ -79,7 +96,7 @@ class session_scope
 	} \
 	do {} while (false)
 
-class callback_result_data
+class callback_result_data : public callback_result_data_base
 {
 	public:
 		callback_result_data()
@@ -97,36 +114,32 @@ class callback_result_data
 			memcpy(raw_data.data<char>() + sizeof(dnet_addr), cmd, sizeof(dnet_cmd) + cmd->size);
 		}
 
-		virtual ~callback_result_data()
-		{
-		}
-
-		bool is_valid() const
+		bool is_valid() const override
 		{
 			return !raw_data.empty();
 		}
 
-		bool is_ack() const
+		bool is_ack() const override
 		{
 			return status() == 0 && data().empty();
 		}
 
-		bool is_final() const
+		bool is_final() const override
 		{
 			return !(command()->flags & DNET_FLAGS_MORE);
 		}
 
-		bool is_client() const
+		bool is_client() const override
 		{
 			return !(command()->flags & DNET_FLAGS_REPLY);
 		}
 
-		int status() const
+		int status() const override
 		{
 			return command()->status;
 		}
 
-		dnet_addr *address() const
+		dnet_addr *address() const override
 		{
 			DNET_DATA_BEGIN_2();
 			return raw_data
@@ -134,7 +147,7 @@ class callback_result_data
 			DNET_DATA_END_2(0);
 		}
 
-		dnet_cmd *command() const
+		dnet_cmd *command() const override
 		{
 			DNET_DATA_BEGIN_2();
 			return raw_data
