@@ -73,19 +73,19 @@ class callback_result_data
 		callback_result_data(const dnet_addr *addr, const dnet_cmd *cmd)
 		{
 			const size_t size = sizeof(dnet_addr) + sizeof(dnet_cmd) + cmd->size;
-			data = data_pointer::allocate(size);
+			raw_data = data_pointer::allocate(size);
 			if (addr)
-				memcpy(data.data(), addr, sizeof(dnet_addr));
+				memcpy(raw_data.data(), addr, sizeof(dnet_addr));
 			else
-				memset(data.data(), 0, sizeof(dnet_addr));
-			memcpy(data.data<char>() + sizeof(dnet_addr), cmd, sizeof(dnet_cmd) + cmd->size);
+				memset(raw_data.data(), 0, sizeof(dnet_addr));
+			memcpy(raw_data.data<char>() + sizeof(dnet_addr), cmd, sizeof(dnet_cmd) + cmd->size);
 		}
 
 		virtual ~callback_result_data()
 		{
 		}
 
-		data_pointer data;
+		data_pointer raw_data;
 		error_info error;
 };
 
