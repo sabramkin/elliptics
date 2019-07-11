@@ -655,19 +655,14 @@ static int dnet_process_reply(struct dnet_net_state *st, struct dnet_io_req *r) 
 	}
 	pthread_mutex_unlock(&st->trans_lock);
 
-	if (!t) {
-		dnet_log(n, DNET_LOG_ERROR, "%s: could not find transaction for reply: trans %llu",
-		         dnet_dump_id(&cmd->id), (unsigned long long)tid);
-		err = 0;
-		goto out;
+	if (t) {
+		++t->stats.recv_replies;
+		t->stats.recv_size += sizeof(struct dnet_cmd) + cmd->size; // TODO: replace protocol-dependent behavior
+		t->stats.recv_queue_time += r->queue_time;
+		t->stats.recv_time += r->recv_time;
 	}
 
-	++t->stats.recv_replies;
-	t->stats.recv_size += sizeof(struct dnet_cmd) + cmd->size; // TODO: replace protocol-dependent behavior
-	t->stats.recv_queue_time += r->queue_time;
-	t->stats.recv_time += r->recv_time;
-
-	if (t->complete) {
+	if (t && t->complete) {
 		if (t->command == DNET_CMD_READ || t->command == DNET_CMD_READ_NEW) {
 			uint64_t ioflags = 0;
 			if ((t->command == DNET_CMD_READ) &&
@@ -702,8 +697,18 @@ static int dnet_process_reply(struct dnet_net_state *st, struct dnet_io_req *r) 
 		t->complete(dnet_state_addr(t->st), cmd, t->priv);
 	}
 
-	if (t->repliers) {
+	if (r->io_req_type == DNET_IO_REQ_TYPED_RESPONSE) {
+		// Note that response is called even if transaction is already destroyed. After refactoring complete,
+		// all dnet_process_reply's internals won't depend on transactions. It's because io_pool mustn't know
+		// about protocol details.
 		n2_response_info_call_response(n, r->response_info);
+	}
+
+	if (!t) {
+		dnet_log(n, DNET_LOG_ERROR, "%s: could not find transaction for reply: trans %llu",
+		         dnet_dump_id(&cmd->id), (unsigned long long)tid);
+		err = 0;
+		goto out;
 	}
 
 	if (!(flags & DNET_FLAGS_MORE)) {
