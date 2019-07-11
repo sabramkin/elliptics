@@ -30,6 +30,7 @@
 #include <thread>
 
 #include "elliptics/async_result_cast.hpp"
+#include "library/n2_protocol.hpp"
 
 namespace ioremap { namespace elliptics {
 
@@ -64,6 +65,7 @@ class session_scope
 };
 
 // TODO(sabramkin): This abstraction is temporary and used while refactoring in progress.
+// TODO(sabramkin): After refactoring only n2_callback_result_data should stay, no base is needed.
 class callback_result_data_base
 {
 	public:
@@ -172,6 +174,80 @@ class callback_result_data : public callback_result_data_base
 		}
 
 		data_pointer raw_data;
+};
+
+class n2_callback_result_data : public callback_result_data_base
+{
+	public:
+		n2_callback_result_data()
+		: is_result_assigned(false)
+		{
+		}
+
+		n2_callback_result_data(const dnet_addr &addr_in, const dnet_cmd &cmd_in,
+		                        const std::shared_ptr<n2_body> &result_body_in, int result_status_in,
+		                        bool is_last_in)
+		: addr(addr_in)
+		, cmd(cmd_in)
+		, is_result_assigned(true)
+		, result_body(result_body_in)
+		, result_status(result_status_in)
+		, is_last(is_last_in)
+		{
+			// TODO(sabramkin):
+			// Here is emulated protocol logic for single-response commands. It is hardcode that we must
+			// resolve when we introduce bulk commands. See also is_final() method. Note that protocol
+			// mustn't provide its inner structures (such as dnet_cmd), so we must remove command() method
+			// in the future, and must remove cmd member.
+			cmd.flags = (cmd.flags & ~(DNET_FLAGS_NEED_ACK)) | DNET_FLAGS_REPLY;
+			cmd.status = result_status_in;
+		}
+
+		dnet_addr *address() const override
+		{
+			return const_cast<dnet_addr *>(&addr);
+		}
+
+		dnet_cmd *command() const override
+		{
+			return const_cast<dnet_cmd *>(&cmd);
+		}
+
+		int status() const override
+		{
+			return result_status;
+		}
+
+		bool is_valid() const override
+		{
+			return is_result_assigned;
+		}
+
+		bool is_ack() const override
+		{
+			return result_status == 0 && !result_body;
+		}
+
+		bool is_final() const override
+		{
+			return is_last;
+		}
+
+		bool is_client() const override
+		{
+			return false;
+		}
+
+		dnet_addr addr;
+		dnet_cmd cmd;
+
+		bool is_result_assigned;
+
+		// Either result_body or nonzero result_status must be set
+		std::shared_ptr<n2_body> result_body;
+		int result_status;
+
+		bool is_last;
 };
 
 struct dnet_net_state_deleter
