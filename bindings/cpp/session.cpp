@@ -209,7 +209,13 @@ const dnet_addr &address::to_raw() const
 namespace filters {
 bool positive(const callback_result_entry &entry)
 {
-	return entry.status() == 0 && !entry.data().empty();
+	if (entry.tmp_is_n2_protocol()) {
+		// in new mechanic protocol interface won't provide explicit ack
+		return entry.status() == 0;
+	} else {
+		// legacy, hasn't been touched
+		return entry.status() == 0 && !entry.data().empty();
+	}
 }
 
 bool positive_with_ack(const callback_result_entry &entry)
@@ -224,12 +230,24 @@ bool negative(const callback_result_entry &entry)
 
 bool negative_with_ack(const callback_result_entry &entry)
 {
-	return entry.status() != 0 || entry.data().empty();
+	if (entry.tmp_is_n2_protocol()) {
+		// in new mechanic protocol interface won't provide explicit ack
+		return entry.status() != 0;
+	} else {
+		// legacy, hasn't been touched
+		return entry.status() != 0 || entry.data().empty();
+	}
 }
 
 bool all(const callback_result_entry &entry)
 {
-	return entry.status() != 0 || !entry.data().empty();
+	if (entry.tmp_is_n2_protocol()) {
+		// in new mechanic protocol interface won't provide explicit ack
+		return true;
+	} else {
+		// legacy, hasn't been touched
+		return entry.status() != 0 || !entry.data().empty();
+	}
 }
 
 bool all_with_ack(const callback_result_entry &entry)

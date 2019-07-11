@@ -46,6 +46,7 @@ namespace ioremap { namespace elliptics {
 	} \
 	do {} while (false)
 
+// TODO(sabramkin): this is default constructor that operates with deprecated callback_result_data
 callback_result_entry::callback_result_entry() : m_data(std::make_shared<callback_result_data>())
 {
 }
@@ -124,6 +125,17 @@ uint64_t callback_result_entry::size() const
 {
 	auto old_data = static_cast<callback_result_data *>(m_data.get());
 	return old_data->size();
+}
+
+n2_body *callback_result_entry::body() const
+{
+	auto n2_data = static_cast<n2_callback_result_data *>(m_data.get());
+	return n2_data->result_body.get();
+}
+
+bool callback_result_entry::tmp_is_n2_protocol() const
+{
+	return m_data->tmp_is_n2_protocol;
 }
 
 read_result_entry::read_result_entry()

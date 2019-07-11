@@ -80,6 +80,11 @@ class callback_result_data_base
 		virtual ~callback_result_data_base() = default;
 
 		error_info error;
+
+		// Hint to determine derived without dynamic_cast. Reason: lookup_result_entry is used by two handlers:
+		// session::lookup and session::write. The first one is converted to protocol-independent, but the
+		// second one isn't.
+		bool tmp_is_n2_protocol;
 };
 
 #define DNET_DATA_BEGIN_2() try { \
@@ -103,10 +108,13 @@ class callback_result_data : public callback_result_data_base
 	public:
 		callback_result_data()
 		{
+			tmp_is_n2_protocol = false;
 		}
 
 		callback_result_data(const dnet_addr *addr, const dnet_cmd *cmd)
 		{
+			tmp_is_n2_protocol = false;
+
 			const size_t size = sizeof(dnet_addr) + sizeof(dnet_cmd) + cmd->size;
 			raw_data = data_pointer::allocate(size);
 			if (addr)
@@ -182,6 +190,7 @@ class n2_callback_result_data : public callback_result_data_base
 		n2_callback_result_data()
 		: is_result_assigned(false)
 		{
+			tmp_is_n2_protocol = true;
 		}
 
 		n2_callback_result_data(const dnet_addr &addr_in, const dnet_cmd &cmd_in,
@@ -194,6 +203,8 @@ class n2_callback_result_data : public callback_result_data_base
 		, result_status(result_status_in)
 		, is_last(is_last_in)
 		{
+			tmp_is_n2_protocol = true;
+
 			// TODO(sabramkin):
 			// Here is emulated protocol logic for single-response commands. It is hardcode that we must
 			// resolve when we introduce bulk commands. See also is_final() method. Note that protocol

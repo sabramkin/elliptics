@@ -199,7 +199,10 @@ bool async_result<T>::get(T &entry)
 {
 	wait(session::throw_at_get);
 	for (auto it = m_data->results.begin(); it != m_data->results.end(); ++it) {
-		if (it->status() == 0 && !it->data().empty()) {
+		bool is_valuable_entry = it->tmp_is_n2_protocol()
+			? (it->status() == 0 && !it->data().empty())
+			: (it->is_valid() && it->status() == 0);
+		if (is_valuable_entry) {
 			entry = *it;
 			return true;
 		}

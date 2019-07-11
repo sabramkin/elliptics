@@ -23,6 +23,8 @@
 #include <map>
 #include <vector>
 
+class n2_body;
+
 namespace ioremap { namespace elliptics {
 
 class callback_result_data_base;
@@ -49,14 +51,23 @@ class callback_result_entry
 		int status() const;
 		//! Error info for this package if exists
 		error_info error() const;
-		data_pointer		raw_data() const;
+
 		struct dnet_addr	*address() const;
 		struct dnet_cmd		*command() const;
+
+		// TODO(sabramkin): Deprecated methods, for usage with callback_result_data (old) only
+		data_pointer		raw_data() const;
 		data_pointer		data() const;
 		uint64_t		size() const;
 		template <typename T>
 		inline T		*data() const
 		{ return data().data<T>(); }
+
+		// TODO(sabramkin): New methods, for usage with n2_callback_result_data (new) only
+		n2_body *body() const;
+
+		// TODO(sabramkin): Hint to determine what methods to use: new or deprecated
+		bool tmp_is_n2_protocol() const;
 
 	protected:
 		std::shared_ptr<callback_result_data_base> m_data;
