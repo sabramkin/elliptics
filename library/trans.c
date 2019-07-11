@@ -737,6 +737,9 @@ static int dnet_trans_convert_timed_out_to_responses(struct dnet_net_state *st, 
 
 		if (t->repliers) {
 			// Protocol-independent mechanic
+
+			// Note that dnet_io_req here is used only to temporarily save response_holder, not to put it
+			// into dnet_request_queue. TODO(sabramkin): rework the hack
 			r->io_req_type = DNET_IO_REQ_TYPED_RESPONSE;
 			r->response_info = n2_response_info_create_from_error(&t->cmd, t->repliers, -ETIMEDOUT);
 		} else {
@@ -796,7 +799,8 @@ static void dnet_trans_enqueue_responses_on_timed_out(struct dnet_node *n, struc
 			n2_response_info_call_response(n, r->response_info);
 
 			// Response functor is already includes scheduling io, so we can throw out current dnet_io_req
-			// just after response call.
+			// just after response call. Note that dnet_io_req here is used only to temporarily save
+			// response_holder, not to put it into dnet_request_queue. TODO(sabramkin): rework the hack
 			dnet_io_req_free(r);
 		} else {
 			dnet_schedule_io(n, r);

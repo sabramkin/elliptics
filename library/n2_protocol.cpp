@@ -146,6 +146,9 @@ void n2_response_info_free(struct n2_response_info *resp_info) {
 
 struct n2_response_info *n2_response_info_create_from_error(struct dnet_cmd *cmd, struct n2_repliers *repliers,
                                                             int err) {
+	// Note that repliers->on_reply_error itself creates n2_response_info. Unlike, the current function creates
+	// fictive n2_response_info that is used only to temporarily save response_holder.
+	// TODO(sabramkin): rework the hack
 	auto response_holder = std::bind(repliers->on_reply_error, err, true);
 	return new n2_response_info{ *cmd, std::move(response_holder) };
 }
