@@ -1434,13 +1434,13 @@ int dnet_trans_forward(struct dnet_io_req *r, struct dnet_net_state *orig, struc
 	return dnet_trans_send(t, r);
 }
 
-dnet_cmd n2_convert_to_response_cmd(dnet_cmd cmd) {
-	cmd.flags = (cmd.flags & ~(DNET_FLAGS_NEED_ACK)) | DNET_FLAGS_REPLY;
-	return cmd;
-}
+n2_repliers n2_make_repliers_via_request_queue(dnet_net_state *st, const dnet_cmd &request_cmd, n2_repliers repliers) {
+	auto enqueue_response = [st, request_cmd](std::function<int ()> response_holder, int status) {
+		auto cmd = request_cmd;
+		// Assign to cmd some significant features, that will have meaning at processing msg in io_pool
+		cmd.flags = (cmd.flags & ~(DNET_FLAGS_NEED_ACK)) | DNET_FLAGS_REPLY;
+		cmd.status = status;
 
-n2_repliers n2_make_repliers_via_request_queue(dnet_net_state *st, const dnet_cmd &cmd, n2_repliers repliers) {
-	auto enqueue_response = [st, cmd = n2_convert_to_response_cmd(cmd)](std::function<int ()> response_holder) {
 		std::unique_ptr<n2_response_info>
 			response_info(new n2_response_info{ cmd, std::move(response_holder) });
 
@@ -1461,12 +1461,12 @@ n2_repliers n2_make_repliers_via_request_queue(dnet_net_state *st, const dnet_cm
 
 	repliers_wrappers.on_reply_error = [on_reply_error = std::move(repliers.on_reply_error),
                                             enqueue_response](int errc, bool last) -> int {
-		return enqueue_response(std::bind(on_reply_error, errc, last));
+		return enqueue_response(std::bind(on_reply_error, errc, last), errc);
 	};
 
 	repliers_wrappers.on_reply = [on_reply = std::move(repliers.on_reply),
 	                              enqueue_response](const std::shared_ptr<n2_body> &msg, bool last) -> int {
-		return enqueue_response(std::bind(on_reply, msg, last));
+		return enqueue_response(std::bind(on_reply, msg, last), 0);
 	};
 
 	return repliers_wrappers;
