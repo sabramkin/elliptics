@@ -793,7 +793,7 @@ static void dnet_trans_enqueue_responses_on_timed_out(struct dnet_node *n, struc
 		list_del_init(&r->req_entry);
 
 		if (r->io_req_type == DNET_IO_REQ_TYPED_RESPONSE) {
-			n2_response_info_call_response(r->response_info);
+			n2_response_info_call_response(n, r->response_info);
 
 			// Response functor is already includes scheduling io, so we can throw out current dnet_io_req
 			// just after response call.

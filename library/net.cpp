@@ -1472,10 +1472,6 @@ n2_repliers n2_make_repliers_via_request_queue(dnet_net_state *st, const dnet_cm
 	return repliers_wrappers;
 }
 
-int n2_complete_trans_via_response_holder(dnet_trans *t, n2_response_info *response_info) {
-	return c_exception_guard(response_info->response_holder, t->st->n, __FUNCTION__);
-}
-
 // TODO(sabramkin): Try rework to n2_trans_alloc_send. In new mechanic we don't need to separate alloc and send
 static int n2_trans_send(dnet_trans *t, n2_request_info *request_info) {
 	using namespace ioremap::elliptics;

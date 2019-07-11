@@ -703,7 +703,7 @@ static int dnet_process_reply(struct dnet_net_state *st, struct dnet_io_req *r) 
 	}
 
 	if (t->repliers) {
-		n2_complete_trans_via_response_holder(t, r->response_info);
+		n2_response_info_call_response(n, r->response_info);
 	}
 
 	if (!(flags & DNET_FLAGS_MORE)) {

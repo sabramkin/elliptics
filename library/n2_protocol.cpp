@@ -150,8 +150,8 @@ struct n2_response_info *n2_response_info_create_from_error(struct dnet_cmd *cmd
 	return new n2_response_info{ *cmd, std::move(response_holder) };
 }
 
-void n2_response_info_call_response(struct n2_response_info *response_info) {
-	response_info->response_holder();
+int n2_response_info_call_response(struct dnet_node *n, struct n2_response_info *response_info) {
+	return c_exception_guard(response_info->response_holder, n, __FUNCTION__);
 }
 
 void n2_reply_error(struct n2_repliers *repliers, int error) {
