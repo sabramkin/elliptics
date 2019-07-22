@@ -275,6 +275,7 @@ typedef std::unique_ptr<dnet_net_state, dnet_net_state_deleter> net_state_ptr;
 // Send request to specific state
 async_generic_result send_to_single_state(session &sess, const transport_control &control);
 async_generic_result send_to_single_state(session &sess, dnet_io_control &control);
+async_generic_result n2_send_to_single_state(session &sess, const n2_request &request);
 
 // Send request to each backend
 async_generic_result send_to_each_backend(session &sess, const transport_control &control);

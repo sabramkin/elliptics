@@ -810,6 +810,7 @@ int dnet_state_reset_nolock_noclean(struct dnet_net_state *st, int error, struct
 int dnet_trans_send(struct dnet_trans *t, struct dnet_io_req *req);
 
 int dnet_trans_forward(struct dnet_io_req *r, struct dnet_net_state *orig, struct dnet_net_state *forward);
+int n2_trans_send(struct dnet_trans *t, struct n2_request_info *request_info);
 int n2_trans_forward(struct n2_request_info *request_info, struct dnet_net_state *orig, struct dnet_net_state *forward);
 int n2_response_info_call_response(struct dnet_node *n, struct n2_response_info *response_info);
 
