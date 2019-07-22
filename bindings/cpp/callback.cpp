@@ -22,6 +22,7 @@
 
 #include "library/elliptics.h"
 #include "library/logger.hpp"
+#include "library/trans.hpp"
 
 namespace ioremap { namespace elliptics {
 
@@ -189,6 +190,57 @@ private:
 };
 
 } // namespace detail
+
+template <typename Method>
+async_generic_result n2_send_impl(session &sess, const n2_request &request, Method method)
+{
+	async_generic_result result(sess);
+
+	auto handler = std::make_shared<detail::n2_basic_handler>(request.cmd, sess.get_logger(), result);
+
+	auto calls_counter = std::make_shared<std::atomic<bool>>(false);
+	auto test_and_set_reply_has_sent = [calls_counter](bool last) {
+		if (last) {
+			return calls_counter->exchange(true);
+		} else {
+			return bool(*calls_counter);
+		}
+	};
+
+	n2_request_info request_info{ request, n2_repliers() };
+
+	request_info.repliers.on_reply =
+		[handler, test_and_set_reply_has_sent](const std::shared_ptr<n2_body> &result, bool last){
+			if (test_and_set_reply_has_sent(last)) {
+				return -EALREADY;
+			}
+
+			return handler->on_reply(result, last);
+		};
+	request_info.repliers.on_reply_error =
+		[handler, test_and_set_reply_has_sent](int err, bool last){
+			if (test_and_set_reply_has_sent(last)) {
+				return -EALREADY;
+			}
+
+			return handler->on_reply_error(err, last);
+		};
+
+	const size_t count = method(sess, std::move(request_info), handler->m_addr);
+	handler->set_total(count);
+	return result;
+}
+
+static size_t n2_send_to_single_state_impl(session &sess, n2_request_info &&request_info, dnet_addr &addr_out)
+{
+	n2_trans_alloc_send(sess.get_native(), std::move(request_info), addr_out);
+	return 1;
+}
+
+async_generic_result n2_send_to_single_state(session &sess, const n2_request &request)
+{
+	return n2_send_impl(sess, request, n2_send_to_single_state_impl);
+}
 
 template <typename Method, typename T>
 async_generic_result send_impl(session &sess, T &control, Method method)
