@@ -98,6 +98,96 @@ private:
 	std::atomic_size_t m_total;
 };
 
+class n2_basic_handler
+{
+public:
+	static int handler(dnet_addr *addr, dnet_cmd *cmd, void *priv)
+	{
+		basic_handler *that = reinterpret_cast<basic_handler *>(priv);
+		if (that->handle(addr, cmd)) {
+			delete that;
+		}
+
+		return 0;
+	}
+
+	n2_basic_handler(const dnet_cmd &cmd, std::unique_ptr<dnet_logger> logger, async_generic_result &result) :
+		m_cmd(cmd),
+		m_logger(std::move(logger)),
+		m_handler(result), m_completed(0), m_total(0)
+	{
+		memset(&m_addr, 0, sizeof(dnet_addr)); // m_addr will be filled later
+	}
+
+	int on_reply(const std::shared_ptr<n2_body> &result, bool is_last)
+	{
+		// TODO(sabramkin): Output only protocol-independent known info (currently old-mechanic logging used)
+		log_reply_info(&m_addr, &m_cmd);
+
+		auto data = std::make_shared<n2_callback_result_data>(m_addr, m_cmd, result, 0, is_last);
+		callback_result_entry entry(data);
+		m_handler.process(entry);
+
+		increment_completed(); // TODO(sabramkin): correctly process trans destroying
+		return 0;
+	}
+
+	int on_reply_error(int err, bool is_last)
+	{
+		// TODO(sabramkin): Output only protocol-independent known info (currently old-mechanic logging used)
+		log_reply_info(&m_addr, &m_cmd);
+
+		auto data = std::make_shared<n2_callback_result_data>(m_addr, m_cmd, nullptr, err, is_last);
+		data->error = create_error(err, "n2 lookup_new error"); // TODO(sabramkin): rework error
+		callback_result_entry entry(data);
+		m_handler.process(entry);
+
+		increment_completed(); // TODO(sabramkin): correctly process trans destroying
+		return 0;
+	}
+
+	// how many independent transactions share this handler plus call below
+	// call below and corresponding +1 is needed, since transactions can be completed
+	// before send_impl() calls this method to setup this 'reference counter'
+	bool set_total(size_t total)
+	{
+		m_handler.set_total(total);
+		m_total = total + 1;
+		return increment_completed();
+	}
+
+private:
+	void log_reply_info(dnet_addr *addr, dnet_cmd *cmd)
+	{
+		DNET_LOG(m_logger, cmd->status ? DNET_LOG_ERROR : DNET_LOG_NOTICE, "{}: {}: handled reply from: {}, "
+		                                                                   "trans: {}, cflags: {}, status: {}, "
+		                                                                   "size: {}, client: {}, last: {}",
+		         dnet_dump_id(&cmd->id), dnet_cmd_string(cmd->cmd), addr ? dnet_addr_string(addr) : "<unknown>",
+		         cmd->trans, dnet_flags_dump_cflags(cmd->flags), int(cmd->status), cmd->size,
+		         !(cmd->flags & DNET_FLAGS_REPLY), !(cmd->flags & DNET_FLAGS_MORE));
+	}
+
+	bool increment_completed()
+	{
+		if (++m_completed == m_total) {
+			m_handler.complete(error_info());
+			return true;
+		}
+
+		return false;
+	}
+
+public:
+	dnet_addr m_addr;
+
+private:
+	dnet_cmd m_cmd;
+	std::unique_ptr<dnet_logger> m_logger;
+	async_result_handler<callback_result_entry> m_handler;
+	std::atomic_size_t m_completed;
+	std::atomic_size_t m_total;
+};
+
 } // namespace detail
 
 template <typename Method, typename T>
