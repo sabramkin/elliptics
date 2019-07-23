@@ -15,6 +15,7 @@
 #include "library/common.hpp"
 #include "library/elliptics.h"
 #include "library/protocol.hpp"
+#include "library/trans.hpp"
 
 #include "bindings/cpp/functional_p.h"
 
@@ -118,6 +119,26 @@ private:
 		dnet_trans_control m_control;
 	};
 
+	class n2_inner_handler : public multigroup_handler<lookup_handler, lookup_result_entry> {
+	public:
+		n2_inner_handler(const session &s,
+		                 const async_lookup_result &result,
+		                 std::vector<int> &&groups,
+		                 n2_request &&request)
+		: parent_type(s, result, std::move(groups))
+		, m_request(std::move(request)) {
+		}
+
+	protected:
+		async_generic_result send_to_next_group() override {
+			m_request.cmd.id.group_id = current_group();
+			return n2_send_to_single_state(m_sess, m_request);
+		}
+
+	private:
+		n2_request m_request;
+	};
+
 public:
 	explicit lookup_handler(const session &session, const async_lookup_result &result, const key &key)
 	: m_key(key)
@@ -148,6 +169,35 @@ public:
 		async_lookup_result result{m_session};
 		auto handler = std::make_shared<inner_handler>(m_session, result, std::move(groups),
 		                                               control.get_native());
+		handler->set_total(m_handler.get_total());
+		handler->start();
+		result.connect(
+			std::bind(&lookup_handler::process, shared_from_this(), std::placeholders::_1),
+			std::bind(&lookup_handler::complete, shared_from_this(), std::placeholders::_1)
+		);
+	}
+
+	void n2_start(std::vector<int> &&groups, n2_request &&request) {
+		dnet_cmd &cmd = request.cmd;
+		DNET_LOG_INFO(m_log, "{}: {}: started: groups: {}, cflags: {}", dnet_dump_id_str(m_key.raw_id().id),
+		              dnet_cmd_string(cmd.cmd), groups,
+		              dnet_flags_dump_cflags(cmd.flags));
+
+		m_context.reset(new dnet_access_context(m_session.get_native_node()));
+		if (m_context) {
+			m_context->add({{"cmd", std::string(dnet_cmd_string(cmd.cmd))},
+			                {"id", std::string(dnet_dump_id_str(m_key.id().id))},
+			                {"access", "client"},
+			                {"cflags",  std::string(dnet_flags_dump_cflags(cmd.flags))},
+			                {"trace_id", to_hex_string(m_session.get_trace_id())},
+			               });
+		}
+
+		m_transes.reserve(groups.size());
+
+		async_lookup_result result{m_session};
+		auto handler = std::make_shared<n2_inner_handler>(m_session, result, std::move(groups),
+		                                                  std::move(request));
 		handler->set_total(m_handler.get_total());
 		handler->start();
 		result.connect(
@@ -190,6 +240,21 @@ async_lookup_result session::lookup(const key &id) {
 	trace_scope scope{*this};
 	DNET_SESSION_GET_GROUPS(async_lookup_result);
 	transform(id);
+
+	if (true) {
+		dnet_cmd cmd;
+		memset(&cmd, 0, sizeof(dnet_cmd));
+		cmd.id = id.id();
+		cmd.cmd = DNET_CMD_LOOKUP_NEW;
+		cmd.flags = get_cflags() | DNET_FLAGS_NEED_ACK;
+
+		n2_request request(cmd, ioremap::elliptics::n2::default_deadline());
+
+		async_lookup_result result(*this);
+		auto handler = std::make_shared<lookup_handler>(*this, result, id);
+		handler->n2_start(std::move(groups), std::move(request));
+		return result;
+	}
 
 	transport_control control;
 	control.set_key(id.id());
